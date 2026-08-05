@@ -1,0 +1,10 @@
+{
+  "name": "Due-Equipment-Management-App",
+  "description": "Quản lý thiết bị giảng đường, quét mã SN QR/Barcode, theo dõi kiểm tra định kỳ, thay thế vật tư, thống kê sự cố và tích hợp n8n workflow.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
