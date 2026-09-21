@@ -101,6 +101,7 @@ export interface ToastMessage {
   type: ToastType;
   timestamp: string;
   deviceSn?: string;
+  onClick?: () => void;
 }
 
 export type DeviceTransferType = 'transfer' | 'recall';

@@ -44,6 +44,7 @@ import { BatchQRPrintModal } from './components/BatchQRPrintModal';
 import { ToastContainer } from './components/ToastContainer';
 import { AdminProfileModal } from './components/AdminProfileModal';
 import { QuickChatbot } from './components/QuickChatbot';
+import { TelegramConfigModal } from './components/TelegramConfigModal';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -94,6 +95,11 @@ export default function App() {
   const [selectedQRDevice, setSelectedQRDevice] = useState<Device | null>(null);
 
   const [isBatchQRPrintOpen, setIsBatchQRPrintOpen] = useState(false);
+
+  // Telegram Integration State
+  const [telegramChatId, setTelegramChatId] = useState<string>(() => localStorage.getItem('DUE_TELEGRAM_CHAT_ID') || '');
+  const [telegramBotToken, setTelegramBotToken] = useState<string>(() => localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN') || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8');
+  const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
 
   // PWA Install Prompt State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -158,7 +164,8 @@ export default function App() {
     title: string, 
     message: string, 
     type: ToastType = 'info', 
-    deviceSn?: string
+    deviceSn?: string,
+    onClick?: () => void
   ) => {
     const newToast: ToastMessage = {
       id: 'toast-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
@@ -166,14 +173,15 @@ export default function App() {
       message,
       type,
       timestamp: new Date().toISOString(),
-      deviceSn
+      deviceSn,
+      onClick
     };
     setToasts(prev => [newToast, ...prev].slice(0, 6));
 
-    // Auto clear toast after 5s
+    // Auto clear toast after 5s (or 8s if actionable)
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== newToast.id));
-    }, 5000);
+    }, onClick ? 8000 : 5000);
   };
 
   const handleDismissToast = (id: string) => {
@@ -286,6 +294,23 @@ export default function App() {
       (snapshot) => setInventories(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as DeviceInventoryRecord))),
       (error) => handleFirestoreError(error, OperationType.LIST, 'inventories')
     );
+
+    // Sync app_config (Telegram settings) across all sessions in real-time
+    const unsubConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data?.telegramChatId) {
+          setTelegramChatId(data.telegramChatId);
+          localStorage.setItem('DUE_TELEGRAM_CHAT_ID', data.telegramChatId);
+        }
+        if (data?.telegramBotToken) {
+          setTelegramBotToken(data.telegramBotToken);
+          localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', data.telegramBotToken);
+        }
+      }
+    }, (error) => {
+      console.warn('App config sync:', error);
+    });
     
     return () => {
       unsubDevices();
@@ -294,6 +319,7 @@ export default function App() {
       unsubIncidents();
       unsubTransfers();
       unsubInventories();
+      unsubConfig();
     };
   }, [currentUser]);
 
@@ -614,25 +640,55 @@ export default function App() {
   };
 
   const sendTelegramAlert = async (incident: any, eventType: 'new' | 'accepted' | 'resolved', resolutionNotes?: string) => {
-    const token = localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN') || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8';
-    const chatId = localStorage.getItem('DUE_TELEGRAM_CHAT_ID');
-    if (!chatId) return;
+    const token = telegramBotToken || localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN') || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8';
+    const chatId = telegramChatId || localStorage.getItem('DUE_TELEGRAM_CHAT_ID');
 
     try {
-      await fetch('/api/telegram/send', {
+      const res = await fetch('/api/telegram/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           token,
-          chatId,
+          chatId: chatId || undefined,
           incident,
           eventType,
           resolutionNotes,
           updatedBy: currentUser?.name || 'Cán Bộ Kỹ Thuật'
         })
       });
-    } catch (err) {
+
+      const resData = await res.json();
+      if (!res.ok) {
+        if (resData.noChatId || !chatId) {
+          addToast(
+            '⚠️ Chưa Kết Nối Telegram Bot',
+            'Sự cố đã được lưu vào hệ thống nhưng chưa thể gửi tới Telegram do chưa có Chat ID! Nhấn vào đây để kết nối bot @japancsvcbot.',
+            'warning',
+            incident?.deviceSn,
+            () => setIsTelegramModalOpen(true)
+          );
+        } else {
+          addToast(
+            'Lỗi Gửi Telegram',
+            `Không thể chuyển tin tới bot: ${resData.error || 'Lỗi kết nối Telegram'}`,
+            'error',
+            incident?.deviceSn,
+            () => setIsTelegramModalOpen(true)
+          );
+        }
+        return false;
+      } else {
+        addToast(
+          '🚀 Đã Phát Tin Tới Telegram',
+          `Cảnh báo sự cố đã gửi tới bot @japancsvcbot thành công (Chat ID: ${resData.sentToChatId || chatId})!`,
+          'success',
+          incident?.deviceSn
+        );
+        return true;
+      }
+    } catch (err: any) {
       console.error('Error sending Telegram alert from frontend:', err);
+      return false;
     }
   };
 
@@ -817,6 +873,8 @@ export default function App() {
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         onOpenChatbot={() => setIsChatbotOpen(true)}
+        telegramChatId={telegramChatId}
+        onOpenTelegramConfig={() => setIsTelegramModalOpen(true)}
       />
 
       {/* Main Container */}
@@ -972,8 +1030,26 @@ export default function App() {
           onAddIncident={handleAddIncident}
           isOpenExternal={isChatbotOpen}
           onCloseExternal={() => setIsChatbotOpen(false)}
+          onOpenTelegramConfig={() => setIsTelegramModalOpen(true)}
         />
       )}
+
+      {/* Telegram Bot Setup Modal */}
+      <TelegramConfigModal
+        isOpen={isTelegramModalOpen}
+        onClose={() => setIsTelegramModalOpen(false)}
+        currentChatId={telegramChatId}
+        currentBotToken={telegramBotToken}
+        onSaved={(newChatId, newBotToken) => {
+          setTelegramChatId(newChatId);
+          setTelegramBotToken(newBotToken);
+          addToast(
+            '✅ Đã Kết Nối Telegram',
+            `Đã lưu Chat ID [${newChatId}] thành công. Mọi sự cố phòng học sẽ được bắn trực tiếp tới Telegram này!`,
+            'success'
+          );
+        }}
+      />
 
     </div>
   );

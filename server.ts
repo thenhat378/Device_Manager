@@ -4,7 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import { eq, desc, inArray } from 'drizzle-orm';
 import { GoogleGenAI } from '@google/genai';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, updateDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { getFirestore, doc, updateDoc, collection, getDocs, query, where, getDoc, setDoc } from 'firebase/firestore';
 import fs from 'fs';
 import { 
   Device, 
@@ -536,18 +536,92 @@ do_khan_cap: "Chưa xác định"`;
     }
   });
 
+  // Helper to read Telegram configuration from Firestore database
+  async function getTelegramConfigFromDb(): Promise<{ telegramBotToken?: string; telegramChatId?: string; telegramGroupName?: string } | null> {
+    try {
+      if (dbFirestore) {
+        const docSnap = await getDoc(doc(dbFirestore, 'settings', 'app_config'));
+        if (docSnap.exists()) {
+          return docSnap.data() as any;
+        }
+      }
+    } catch (e: any) {
+      console.warn('Could not read settings/app_config from Firestore:', e.message);
+    }
+    return null;
+  }
+
+  // Get current global Telegram config
+  app.get('/api/telegram/config', async (req, res) => {
+    try {
+      const dbConfig = await getTelegramConfigFromDb();
+      res.json({
+        token: dbConfig?.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8',
+        chatId: dbConfig?.telegramChatId || process.env.TELEGRAM_CHAT_ID || '',
+        groupName: dbConfig?.telegramGroupName || ''
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Save global Telegram config
+  app.post('/api/telegram/config', async (req, res) => {
+    try {
+      const { token, chatId, groupName } = req.body;
+      if (dbFirestore) {
+        await setDoc(doc(dbFirestore, 'settings', 'app_config'), {
+          telegramBotToken: token?.trim() || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8',
+          telegramChatId: chatId?.trim() || '',
+          telegramGroupName: groupName?.trim() || '',
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      }
+      res.json({ success: true, message: 'Đã lưu cấu hình Telegram thành công vào hệ thống' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Reset/Delete Webhook endpoint to unblock Telegram bot
+  app.post('/api/telegram/reset-webhook', async (req, res) => {
+    try {
+      const { token } = req.body;
+      const targetToken = token || process.env.TELEGRAM_BOT_TOKEN || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8';
+      const response = await fetch(`https://api.telegram.org/bot${targetToken}/deleteWebhook?drop_pending_updates=false`);
+      const data = await response.json();
+      res.json({ success: true, result: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Direct Telegram Integration Endpoints
   app.post('/api/telegram/send', async (req, res) => {
     try {
       const { token, chatId, message, incident, eventType = 'new', resolutionNotes, updatedBy } = req.body;
-      const targetToken = token || process.env.TELEGRAM_BOT_TOKEN || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8';
-      const targetChatId = chatId || process.env.TELEGRAM_CHAT_ID;
+      let targetToken = token || process.env.TELEGRAM_BOT_TOKEN || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8';
+      let targetChatId = chatId || process.env.TELEGRAM_CHAT_ID;
+
+      // If chatId is not passed from client, read from Firestore settings/app_config
+      if (!targetChatId) {
+        const dbConfig = await getTelegramConfigFromDb();
+        if (dbConfig?.telegramChatId) {
+          targetChatId = dbConfig.telegramChatId;
+        }
+        if (!targetToken && dbConfig?.telegramBotToken) {
+          targetToken = dbConfig.telegramBotToken;
+        }
+      }
 
       if (!targetToken) {
         return res.status(400).json({ error: 'Chưa cấu hình Telegram Bot Token' });
       }
       if (!targetChatId) {
-        return res.status(400).json({ error: 'Chưa cung cấp Chat ID người nhận' });
+        return res.status(400).json({ 
+          error: 'Chưa cung cấp Telegram Chat ID người nhận. Vui lòng vào Cấu hình Telegram để kết nối bot @japancsvcbot!',
+          noChatId: true 
+        });
       }
 
       function escapeHTML(str: string) {
@@ -604,14 +678,14 @@ do_khan_cap: "Chưa xác định"`;
         return res.status(400).json({ error: resData.description || 'Lỗi từ Telegram API' });
       }
 
-      res.json({ success: true, result: resData.result });
+      res.json({ success: true, result: resData.result, sentToChatId: targetChatId });
     } catch (err: any) {
       console.error('Error sending Telegram message:', err);
       res.status(500).json({ error: err.message || 'Lỗi kết nối tới Telegram API' });
     }
   });
 
-  // Telegram Get Updates Endpoint (Auto-Scan Chat IDs)
+  // Telegram Get Updates Endpoint (Auto-Scan Chat IDs with Auto-Recovery)
   app.post('/api/telegram/get-updates', async (req, res) => {
     try {
       const { token } = req.body;
@@ -621,15 +695,22 @@ do_khan_cap: "Chưa xác định"`;
         return res.status(400).json({ error: 'Chưa cung cấp Telegram Bot Token' });
       }
 
-      // Query updates without long-polling timeout to avoid 409 Conflict with other connections
-      const response = await fetch(`https://api.telegram.org/bot${targetToken}/getUpdates?limit=50`);
-      const data: any = await response.json();
+      // Query updates
+      let response = await fetch(`https://api.telegram.org/bot${targetToken}/getUpdates?limit=50`);
+      let data: any = await response.json();
+
+      // If webhook conflict, delete webhook automatically and retry
+      if (!data.ok && data.description && data.description.includes('webhook')) {
+        console.log('Webhook detected on Telegram bot, deleting webhook to allow getUpdates...');
+        await fetch(`https://api.telegram.org/bot${targetToken}/deleteWebhook?drop_pending_updates=false`);
+        response = await fetch(`https://api.telegram.org/bot${targetToken}/getUpdates?limit=50`);
+        data = await response.json();
+      }
 
       if (!data.ok) {
-        // If conflict error from Telegram
         if (data.description && data.description.includes('Conflict')) {
           return res.status(400).json({ 
-            error: 'Bot đang có kết nối khác mở. Bạn vui lòng mở Telegram, nhắn tin bất kỳ (ví dụ /start) cho bot @japancsvcbot rồi thử lại hoặc nhập Chat ID thủ công.',
+            error: 'Bot đang có một kết nối khác mở. Bạn vui lòng mở Telegram, nhắn tin bất kỳ (ví dụ /start) cho bot @japancsvcbot rồi nhấn Quét lại, hoặc nhập Chat ID thủ công.',
             isConflict: true 
           });
         }

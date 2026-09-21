@@ -31,6 +31,8 @@ interface HeaderProps {
   isSidebarOpen?: boolean;
   onToggleSidebar?: () => void;
   onOpenChatbot?: () => void;
+  telegramChatId?: string;
+  onOpenTelegramConfig?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -44,7 +46,9 @@ export const Header: React.FC<HeaderProps> = ({
   onInstallApp,
   isSidebarOpen = false,
   onToggleSidebar,
-  onOpenChatbot
+  onOpenChatbot,
+  telegramChatId,
+  onOpenTelegramConfig
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-slate-900 text-white shadow-lg border-b border-slate-800">
@@ -136,6 +140,23 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <Bot className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-300" />
                 <span className="hidden sm:inline">Trợ Lý AI</span>
+              </button>
+            )}
+
+            {/* Telegram Bot Notification Status & Setup Button */}
+            {currentUser && onOpenTelegramConfig && (
+              <button
+                onClick={onOpenTelegramConfig}
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold transition shadow-sm active:scale-95 border ${
+                  telegramChatId
+                    ? 'bg-slate-800 hover:bg-slate-700 text-sky-400 border-sky-500/30'
+                    : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40 animate-pulse'
+                }`}
+                title={telegramChatId ? `Telegram Bot đã kết nối: Chat ID ${telegramChatId}` : 'Chưa kết nối Telegram Bot. Bấm để cài đặt nhận báo hỏng tức thì!'}
+                id="header-telegram-btn"
+              >
+                <Bot className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span className="hidden md:inline">{telegramChatId ? 'Telegram OK' : 'Cài Telegram'}</span>
               </button>
             )}
 

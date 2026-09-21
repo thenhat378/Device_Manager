@@ -41,6 +41,7 @@ interface QuickChatbotProps {
   onAddIncident: (report: Omit<IncidentReport, 'id' | 'reportedAt' | 'status'>) => Promise<void>;
   isOpenExternal?: boolean;
   onCloseExternal?: () => void;
+  onOpenTelegramConfig?: () => void;
 }
 
 const QUICK_PROMPTS = [
@@ -56,7 +57,8 @@ export const QuickChatbot: React.FC<QuickChatbotProps> = ({
   devices,
   onAddIncident,
   isOpenExternal,
-  onCloseExternal
+  onCloseExternal,
+  onOpenTelegramConfig
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -446,6 +448,16 @@ export const QuickChatbot: React.FC<QuickChatbotProps> = ({
               </div>
 
               <div className="flex items-center gap-1">
+                {onOpenTelegramConfig && (
+                  <button
+                    onClick={onOpenTelegramConfig}
+                    className="rounded-lg px-2 py-1 bg-white/10 hover:bg-white/20 text-sky-200 hover:text-white transition flex items-center gap-1 text-[11px] font-medium"
+                    title="Cấu hình kết nối Telegram Bot (@japancsvcbot)"
+                  >
+                    <Bot className="h-3.5 w-3.5 text-sky-400" />
+                    <span className="text-[10px]">Cài Telegram</span>
+                  </button>
+                )}
                 <button
                   onClick={handleClearHistory}
                   className="rounded-lg p-1.5 text-blue-200 hover:text-white hover:bg-white/10 transition"
