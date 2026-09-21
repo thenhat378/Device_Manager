@@ -31,6 +31,24 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["id", "serialNumber", "name", "category", "status", "createdAt", "updatedAt"]
+    },
+    "InventoryRecord": {
+      "title": "InventoryRecord",
+      "description": "Device inventory audit record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "deviceId": { "type": "string" },
+        "deviceSn": { "type": "string" },
+        "deviceName": { "type": "string" },
+        "inventoryDate": { "type": "string" },
+        "auditorName": { "type": "string" },
+        "status": { "type": "string" },
+        "locationStatus": { "type": "string", "enum": ["matched", "mismatched"] },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "deviceId", "deviceSn", "deviceName", "inventoryDate", "auditorName", "status", "locationStatus", "createdAt"]
     }
   },
   "firestore": {
@@ -41,6 +59,10 @@
     "/devices/{deviceId}": {
       "schema": { "$ref": "Device" },
       "description": "Device inventory"
+    },
+    "/inventories/{inventoryId}": {
+      "schema": { "$ref": "InventoryRecord" },
+      "description": "Equipment inventory check records"
     }
   }
 }

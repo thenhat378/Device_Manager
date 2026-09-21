@@ -1,6 +1,6 @@
 {
   "name": "Due-Equipment-Management-App",
-  "description": "Quản lý thiết bị giảng đường, quét mã SN QR/Barcode, theo dõi kiểm tra định kỳ, thay thế vật tư, thống kê sự cố và tích hợp n8n workflow.",
+  "description": "Quản lý thiết bị giảng đường, quét mã SN QR/Barcode, theo dõi kiểm tra định kỳ, thay thế vật tư, điều chuyển và chuẩn hóa biểu mẫu biên bản bàn giao.",
   "requestFramePermissions": [
     "camera"
   ],

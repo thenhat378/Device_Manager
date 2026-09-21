@@ -2,30 +2,71 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { eq, desc, inArray } from 'drizzle-orm';
-import { 
-  DEFAULT_N8N_CONFIG,
-  INITIAL_DEVICES
-} from './src/data/mockData.ts';
+import { GoogleGenAI } from '@google/genai';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, doc, updateDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import fs from 'fs';
 import { 
   Device, 
   InspectionRecord, 
   PartReplacementRecord, 
   IncidentReport, 
   DeviceTransferRecord,
-  N8nConfig, 
-  N8nWebhookLog,
   DeviceStatus
 } from './src/types.ts';
+import { INITIAL_DEVICES } from './src/data/mockData.ts';
 import { db } from './src/db/index.ts';
 import { 
   devices, 
   inspections, 
   replacements, 
   incidents, 
-  transfers, 
-  n8nWebhookLogs, 
-  n8nConfig 
+  transfers
 } from './src/db/schema.ts';
+
+// Initialize Firestore on Server-side
+let dbFirestore: any = null;
+try {
+  const firebaseConfig = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf8'));
+  const appFirestore = initializeApp(firebaseConfig);
+  dbFirestore = getFirestore(appFirestore, firebaseConfig.firestoreDatabaseId);
+  console.log("Initialized Firestore on server successfully.");
+} catch (err) {
+  console.error("Failed to initialize Firestore on server:", err);
+}
+
+async function safeTriggerWebhook(url: string, payload: any, retries = 3, delayMs = 1000): Promise<Response> {
+  let lastError: any = null;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout to prevent hanging the app
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        return res;
+      }
+      if (res.status >= 500) {
+        throw new Error(`Server returned error status: ${res.status}`);
+      }
+      return res; // Return non-retryable response
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`Webhook attempt ${attempt} failed: ${err.message || err}. Retrying in ${delayMs * attempt}ms...`);
+      if (attempt < retries) {
+        await new Promise(resolve => setTimeout(resolve, delayMs * attempt)); // Exponential backoff
+      }
+    }
+  }
+  throw lastError || new Error('All webhook attempts failed');
+}
 
 async function startServer() {
   const app = express();
@@ -34,66 +75,7 @@ async function startServer() {
   app.use(express.json());
 
   // Utility to push to n8n webhook log in database
-  const addN8nLog = async (direction: 'outbound' | 'inbound', event: string, status: 'success' | 'failed' | 'simulated', payloadSummary: string) => {
-    const logItem: N8nWebhookLog = {
-      id: 'log-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
-      timestamp: new Date().toISOString(),
-      direction,
-      event,
-      status,
-      payloadSummary
-    };
-    try {
-      await db.insert(n8nWebhookLogs).values({
-        id: logItem.id,
-        timestamp: logItem.timestamp,
-        direction: logItem.direction,
-        event: logItem.event,
-        status: logItem.status,
-        payloadSummary: logItem.payloadSummary
-      });
-    } catch (err) {
-      console.error('Error saving n8n webhook log:', err);
-    }
-    return logItem;
-  };
 
-  // Helper function to send webhook to n8n if configured
-  const triggerN8nWorkflow = async (eventType: string, payload: any) => {
-    try {
-      const configResult = await db.select().from(n8nConfig).limit(1);
-      const activeConfig = configResult.length > 0 ? configResult[0] : DEFAULT_N8N_CONFIG;
-
-      if (!activeConfig.webhookBaseUrl) return;
-
-      await addN8nLog(
-        'outbound', 
-        eventType, 
-        'simulated', 
-        `Trigger [${eventType}] gửi đến n8n (${activeConfig.webhookBaseUrl}): SN ${payload.deviceSn || payload.serialNumber || 'N/A'}`
-      );
-      
-      // Optionally attempt actual fetch if external URL provided and not placeholder
-      if (activeConfig.webhookBaseUrl.startsWith('http') && !activeConfig.webhookBaseUrl.includes('your-university-server')) {
-        fetch(activeConfig.webhookBaseUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-N8N-Secret-Token': activeConfig.secretKey || ''
-          },
-          body: JSON.stringify({
-            event: eventType,
-            timestamp: new Date().toISOString(),
-            data: payload
-          })
-        }).catch(() => {
-          // Silently handle outbound webhook delivery failures
-        });
-      }
-    } catch (err) {
-      console.error('N8n trigger error:', err);
-    }
-  };
 
   // --- API ENDPOINTS ---
 
@@ -170,7 +152,6 @@ async function startServer() {
       });
       
       // Trigger n8n event
-      await triggerN8nWorkflow('DEVICE_CREATED', newDevice);
 
       res.status(201).json(newDevice);
     } catch (err) {
@@ -226,9 +207,6 @@ async function startServer() {
         updatedAt
       };
 
-      // Trigger n8n if status changed
-      await triggerN8nWorkflow('DEVICE_UPDATED', updatedDevice);
-
       res.json(updatedDevice);
     } catch (err) {
       console.error('Error updating device:', err);
@@ -246,7 +224,6 @@ async function startServer() {
 
       await db.delete(devices).where(eq(devices.id, id));
 
-      await triggerN8nWorkflow('DEVICE_DELETED', { id, serialNumber: existing[0].serialNumber, name: existing[0].name });
       res.json({ success: true });
     } catch (err) {
       console.error('Error deleting device:', err);
@@ -263,7 +240,6 @@ async function startServer() {
 
       await db.delete(devices).where(inArray(devices.id, ids));
 
-      await triggerN8nWorkflow('DEVICES_BULK_DELETED', { count: ids.length, ids });
       res.json({ success: true, count: ids.length });
     } catch (err) {
       console.error('Error bulk deleting devices:', err);
@@ -322,8 +298,6 @@ async function startServer() {
         }).where(eq(devices.id, record.deviceId));
       }
 
-      await triggerN8nWorkflow('INSPECTION_COMPLETED', record);
-
       res.status(201).json(record);
     } catch (err) {
       console.error('Error creating inspection:', err);
@@ -369,8 +343,6 @@ async function startServer() {
         status: 'active',
         updatedAt: new Date().toISOString()
       }).where(eq(devices.id, record.deviceId));
-
-      await triggerN8nWorkflow('PART_REPLACED', record);
 
       res.status(201).json(record);
     } catch (err) {
@@ -419,12 +391,407 @@ async function startServer() {
         updatedAt: new Date().toISOString()
       }).where(eq(devices.id, report.deviceId));
 
-      await triggerN8nWorkflow('INCIDENT_REPORTED', report);
+      // Trigger n8n Telegram workflow if webhook is configured in env
+      if (process.env.N8N_WEBHOOK_URL) {
+        const formatRoom = (rm: string) => {
+          if (!rm) return 'Không rõ phòng';
+          if (rm.toLowerCase().startsWith('phòng')) return rm;
+          return `Phòng ${rm}`;
+        };
+
+        const telegramMessageText = `🚨BÁO CÁO SỰ CỐ THIẾT BỊ MỚI 🚨\n` +
+          `Thông tin chi tiết\n` +
+          `🏢 Vị trí / Phòng\n` +
+          `${formatRoom(report.room)}\n` +
+          `📟 Thiết bị cần báo lỗi:\n` +
+          `${report.deviceName}\n` +
+          `👤 Người báo cáo\n` +
+          `${report.reporterName || 'Cán Bộ Kỹ Thuật'}\n` +
+          `📝 Mô tả từ người dùng\n` +
+          `${report.description}`;
+
+        safeTriggerWebhook(process.env.N8N_WEBHOOK_URL, {
+          event: 'new_incident',
+          timestamp: new Date().toISOString(),
+          message: telegramMessageText,
+          incident: report
+        }).then(() => {
+          console.log('Successfully triggered n8n Telegram webhook for incident:', report.id);
+        }).catch(webhookErr => {
+          console.warn('Could not trigger optional n8n webhook (non-fatal):', webhookErr.message || webhookErr);
+        });
+      }
 
       res.status(201).json(report);
     } catch (err) {
       console.error('Error creating incident:', err);
       res.status(500).json({ error: 'Database error creating incident' });
+    }
+  });
+
+  async function getAiAnalysis(deviceName: string, room: string, description: string): Promise<string> {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn("GEMINI_API_KEY is not defined, using fallback AI diagnostics.");
+      return `nguyen_nhan_du_kien: "Chưa thể chẩn đoán tự động (Thiếu API Key)"
+muc_do_anh_huong: "Cần kỹ thuật viên kiểm tra trực tiếp"
+huong_su_ly: "Đến vị trí kiểm tra tình trạng kết nối và nguồn điện của thiết bị"
+thoi_gian_uoc_tinh: "Chưa xác định"
+do_khan_cap: "Cần đánh giá tại hiện trường"`;
+    }
+
+    try {
+      const aiClient = new GoogleGenAI({
+        apiKey: apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+
+      const prompt = `Hãy đóng vai trò là một kỹ thuật viên IT và cơ sở vật chất giàu kinh nghiệm tại Trường Đại học Kinh tế - Đại học Đà Nẵng (DUE). Hãy phân tích báo cáo sự cố sau đây và đưa ra chẩn đoán sơ bộ dưới định dạng YAML đơn giản.
+Thiết bị: ${deviceName}
+Vị trí: ${room}
+Mô tả sự cố từ người dùng: ${description}
+
+Hãy trả về kết quả dưới định dạng YAML với các trường cụ thể (dùng tiếng Việt có dấu):
+- nguyen_nhan_du_kien (Nguyên nhân dự kiến)
+- muc_do_anh_huong (Mức độ ảnh hưởng)
+- huong_su_ly (Hướng xử lý đề xuất cho kỹ thuật viên)
+- thoi_gian_uoc_tinh (Thời gian ước tính khắc phục, ví dụ: 30 phút, 1 ngày, v.v.)
+- do_khan_cap (Độ khẩn cấp: Thấp/Trung bình/Cao/Khẩn cấp)
+
+Không cần viết bất kỳ phần giải thích nào khác ngoài chuỗi YAML đó. Không cần bọc trong markdown code block, chỉ trả về chuỗi YAML thô.`;
+
+      const response = await aiClient.models.generateContent({
+        model: "gemini-3.6-flash",
+        contents: prompt,
+      });
+
+      let text = response.text || "";
+      // Clean up any markdown code blocks if the model wrapped it
+      text = text.replace(/```yaml/g, '').replace(/```/g, '').trim();
+      return text;
+    } catch (err: any) {
+      console.error("Error generating AI analysis:", err);
+      return `nguyen_nhan_du_kien: "Lỗi kết nối với hệ thống trí tuệ nhân tạo Gemini (${err.message || 'Unknown error'})"
+muc_do_anh_huong: "Cần kỹ thuật viên kiểm tra thủ công"
+huong_su_ly: "Tiến hành khảo sát trực tiếp tại phòng học để ghi nhận lỗi"
+thoi_gian_uoc_tinh: "Không khả dụng"
+do_khan_cap: "Chưa xác định"`;
+    }
+  }
+
+  // Discord Webhook Sending Endpoint
+  app.post('/api/discord/send', async (req, res) => {
+    try {
+      const { webhookUrl, faultData, eventType, resolutionNotes } = req.body;
+      const targetUrl = webhookUrl || process.env.DISCORD_WEBHOOK_URL || 'https://discordapp.com/api/webhooks/1536963623295909888/GeJsvcz_wBp13avyIy_BKEq2M_brDAkDKtvbEOvRJzYxMyVVKNRvzpC55in9EYhgr7U-';
+
+      if (!targetUrl) {
+        return res.status(400).json({ error: 'Chưa cấu hình Discord Webhook URL' });
+      }
+      // Build message payload based on event type
+      let messagePayload: any = {
+        username: "Hệ thống Báo hỏng DUE",
+        avatar_url: "https://cdn-icons-png.flaticon.com/512/1046/1046365.png",
+      };
+
+      if (!eventType || eventType === 'new') {
+        const formatRoom = (rm: string) => {
+          if (!rm) return 'Không rõ phòng';
+          if (rm.toLowerCase().startsWith('phòng')) return rm;
+          return `Phòng ${rm}`;
+        };
+
+        const roleId = process.env.DISCORD_ROLE_ID || 'ID_ROLE_KY_THUAT';
+
+        messagePayload.content = `📢 <@&${roleId}> Có một báo cáo sự cố thiết bị mới!`;
+        messagePayload.embeds = [
+          {
+            title: "🚨 BÁO CÁO SỰ CỐ THIẾT BỊ MỚI",
+            description: "Thông tin chi tiết về sự cố thiết bị vừa được ghi nhận từ hệ thống mã QR.",
+            color: 16711680, // Mã màu Đỏ (Red)
+            fields: [
+              {
+                name: "🏢 Vị trí / Phòng",
+                value: `**${formatRoom(faultData.room)}**\n(Ví dụ: Phòng D305)`,
+                inline: true
+              },
+              {
+                name: "📟 Thiết bị",
+                value: `**${faultData.deviceName}**\n(Ví dụ: Máy chiếu Panasonic)`,
+                inline: true
+              },
+              {
+                name: "👤 Người báo cáo",
+                value: `${faultData.reporter}`,
+                inline: true
+              },
+              {
+                name: "📝 Mô tả từ người dùng",
+                value: `\`\`\`${faultData.description || 'Không có mô tả'}\`\`\``,
+                inline: false
+              }
+            ],
+            footer: {
+              text: "Hệ thống Báo hỏng DUE • Quản lý Thiết bị",
+              icon_url: "https://i.imgur.com/your-due-logo.png"
+            },
+            timestamp: new Date().toISOString()
+          }
+        ];
+      } else if (eventType === 'accepted') {
+        messagePayload.content = "🔧 **TIẾP NHẬN SỰ CỐ THIẾT BỊ** 🔧";
+        messagePayload.embeds = [
+          {
+            title: "Thông tin tiếp nhận",
+            color: 16753920, // Mã màu Cam (Orange)
+            fields: [
+              {
+                name: "🏢 Vị trí / Phòng",
+                value: `**${faultData.room}**`,
+                inline: true
+              },
+              {
+                name: "📟 Thiết bị lỗi",
+                value: `**${faultData.deviceName}**\n(Mã: ${faultData.sn})`,
+                inline: true
+              },
+              {
+                name: "👤 Kỹ thuật tiếp nhận",
+                value: `${faultData.reporter}`,
+                inline: true
+              },
+              {
+                name: "📝 Mô tả từ người dùng",
+                value: `${faultData.description}`,
+                inline: false
+              },
+              {
+                name: "💬 Trạng thái xử lý",
+                value: "Kỹ thuật viên đang tiến hành kiểm tra và khắc phục lỗi.",
+                inline: false
+              }
+            ],
+            footer: {
+              text: "Hệ thống Quản trị Cơ sở vật chất"
+            },
+            timestamp: new Date().toISOString()
+          }
+        ];
+      } else if (eventType === 'resolved') {
+        messagePayload.content = "✅ **ĐÃ KHẮC PHỤC XONG SỰ CỐ** ✅";
+        messagePayload.embeds = [
+          {
+            title: "Kết quả khắc phục",
+            color: 65280, // Mã màu Xanh lá (Green)
+            fields: [
+              {
+                name: "🏢 Vị trí / Phòng",
+                value: `**${faultData.room}**`,
+                inline: true
+              },
+              {
+                name: "📟 Thiết bị lỗi",
+                value: `**${faultData.deviceName}**\n(Mã: ${faultData.sn})`,
+                inline: true
+              },
+              {
+                name: "👤 Kỹ thuật thực hiện",
+                value: `${faultData.reporter}`,
+                inline: true
+              },
+              {
+                name: "📢 Phương án khắc phục",
+                value: `${resolutionNotes || 'Đã xử lý hoàn tất'}`,
+                inline: false
+              },
+              {
+                name: "💬 Trạng thái thiết bị",
+                value: "Thiết bị đã hoạt động bình thường trở lại.",
+                inline: false
+              }
+            ],
+            footer: {
+              text: "Hệ thống Quản trị Cơ sở vật chất"
+            },
+            timestamp: new Date().toISOString()
+          }
+        ];
+      }
+
+      const response = await fetch(targetUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(messagePayload)
+      });
+
+      if (response.ok) {
+        res.json({ success: true, message: "Đã gửi thông báo Discord thành công!" });
+      } else {
+        const errorText = await response.text();
+        console.error("Lỗi từ Discord Webhook:", response.status, errorText);
+        res.status(400).json({ error: `Lỗi từ Discord: ${response.status} - ${errorText}` });
+      }
+    } catch (err: any) {
+      console.error("Lỗi kết nối khi gọi Discord:", err);
+      res.status(500).json({ error: `Lỗi kết nối Discord Webhook: ${err.message}` });
+    }
+  });
+
+  app.post('/api/n8n/trigger-telegram', async (req, res) => {
+    try {
+      const { webhookUrl, message, incident } = req.body;
+      const targetUrl = webhookUrl || process.env.N8N_WEBHOOK_URL;
+      
+      if (!targetUrl) {
+        return res.status(400).json({ error: 'Chưa cấu hình n8n Webhook URL' });
+      }
+
+      let formattedMsg = message;
+      if (!formattedMsg && incident) {
+        const formatRoom = (rm: string) => {
+          if (!rm) return 'Không rõ phòng';
+          if (rm.toLowerCase().startsWith('phòng')) return rm;
+          return `Phòng ${rm}`;
+        };
+        formattedMsg = `🚨BÁO CÁO SỰ CỐ THIẾT BỊ MỚI 🚨\n` +
+          `Thông tin chi tiết\n` +
+          `🏢 Vị trí / Phòng\n` +
+          `${formatRoom(incident.room || incident.roomName)}\n` +
+          `📟 Thiết bị cần báo lỗi:\n` +
+          `${incident.deviceName}\n` +
+          `👤 Người báo cáo\n` +
+          `${incident.reporterName || 'Cán Bộ Kỹ Thuật'}\n` +
+          `📝 Mô tả từ người dùng\n` +
+          `${incident.description || ''}`;
+      }
+
+      const payload = {
+        source: 'DUE Equipment Management',
+        timestamp: new Date().toISOString(),
+        message: formattedMsg || 'Test kích hoạt n8n workflow gửi Telegram thông báo sự cố',
+        incident: incident || {
+          deviceSn: 'TEST-SN-01',
+          deviceName: 'Thiết bị kiểm tra giả lập',
+          faculty: 'Khoa CNTT',
+          room: 'Phòng thực hành A1',
+          severity: 'urgent',
+          description: 'Kiểm tra tín hiệu kết nối Telegram từ hệ thống n8n workflow.'
+        }
+      };
+
+      const response = await safeTriggerWebhook(targetUrl, payload);
+      const responseText = await response.text();
+      res.json({ success: true, status: response.status, responseText });
+    } catch (err: any) {
+      console.warn('Could not trigger n8n webhook (non-fatal):', err.message || err);
+      res.status(502).json({ error: `Không thể kết nối n8n webhook: ${err.message || 'Lỗi mạng hoặc sai tên miền URL'}` });
+    }
+  });
+
+  // Direct Telegram Integration Endpoints
+  app.post('/api/telegram/send', async (req, res) => {
+    try {
+      const { token, chatId, message, incident } = req.body;
+      const targetToken = token || process.env.TELEGRAM_BOT_TOKEN || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8';
+      const targetChatId = chatId || process.env.TELEGRAM_CHAT_ID;
+
+      if (!targetToken) {
+        return res.status(400).json({ error: 'Chưa cấu hình Telegram Bot Token' });
+      }
+      if (!targetChatId) {
+        return res.status(400).json({ error: 'Chưa cung cấp Chat ID người nhận' });
+      }
+
+      function escapeHTML(str: string) {
+        return (str || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+
+      let text = message;
+      if (incident) {
+        const formatRoom = (rm: string) => {
+          if (!rm) return 'Không rõ phòng';
+          if (rm.toLowerCase().startsWith('phòng')) return rm;
+          return `Phòng ${rm}`;
+        };
+        
+        text = `🚨<b>BÁO CÁO SỰ CỐ THIẾT BỊ MỚI</b> 🚨\n` +
+               `Thông tin chi tiết\n` +
+               `🏢 Vị trí / Phòng\n` +
+               `<b>${escapeHTML(formatRoom(incident.room))}</b>\n` +
+               `📟 Thiết bị cần báo lỗi:\n` +
+               `<b>${escapeHTML(incident.deviceName)}</b>\n` +
+               `👤 Người báo cáo\n` +
+               `<b>${escapeHTML(incident.reporterName || 'Cán Bộ Kỹ Thuật')}</b>\n` +
+               `📝 Mô tả từ người dùng\n` +
+               `<i>${escapeHTML(incident.description)}</i>`;
+      }
+
+      const telegramUrl = `https://api.telegram.org/bot${targetToken}/sendMessage`;
+      const response = await fetch(telegramUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: targetChatId,
+          text: text || 'Tín hiệu kết nối từ DUE Equipment Management hoạt động tốt!',
+          parse_mode: 'HTML'
+        })
+      });
+
+      const resData: any = await response.json();
+      if (!resData.ok) {
+        return res.status(400).json({ error: resData.description || 'Lỗi từ Telegram API' });
+      }
+
+      res.json({ success: true, result: resData.result });
+    } catch (err: any) {
+      console.error('Error sending Telegram message:', err);
+      res.status(500).json({ error: err.message || 'Lỗi kết nối tới Telegram API' });
+    }
+  });
+
+  app.post('/api/telegram/get-updates', async (req, res) => {
+    try {
+      const { token } = req.body;
+      const targetToken = token || process.env.TELEGRAM_BOT_TOKEN || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8';
+
+      if (!targetToken) {
+        return res.status(400).json({ error: 'Chưa cung cấp Telegram Bot Token' });
+      }
+
+      const response = await fetch(`https://api.telegram.org/bot${targetToken}/getUpdates?timeout=3`);
+      const data: any = await response.json();
+
+      if (!data.ok) {
+        return res.status(400).json({ error: data.description || 'Lỗi từ Telegram API' });
+      }
+
+      const chatsMap = new Map();
+      const updates = data.result || [];
+      updates.forEach((u: any) => {
+        const msg = u.message || u.channel_post || u.edited_message || u.callback_query?.message;
+        if (msg && msg.chat) {
+          const chat = msg.chat;
+          const name = chat.title || [chat.first_name, chat.last_name].filter(Boolean).join(' ') || chat.username || `ID: ${chat.id}`;
+          chatsMap.set(chat.id, {
+            id: String(chat.id),
+            name: name,
+            type: chat.type || 'private',
+            username: chat.username ? `@${chat.username}` : ''
+          });
+        }
+      });
+
+      res.json({ success: true, chats: Array.from(chatsMap.values()) });
+    } catch (err: any) {
+      console.error('Error getting Telegram updates:', err);
+      res.status(500).json({ error: err.message || 'Lỗi kết nối tới Telegram API' });
     }
   });
 
@@ -446,6 +813,25 @@ async function startServer() {
         resolvedAt
       }).where(eq(incidents.id, id));
 
+      // Sync to Firestore
+      if (dbFirestore) {
+        try {
+          const docRef = doc(dbFirestore, 'incidents', id);
+          const updatePayload: any = {
+            status: status !== undefined ? status : existing[0].status,
+            updatedAt: new Date().toISOString()
+          };
+          if (status === 'resolved') {
+            updatePayload.resolvedAt = resolvedAt;
+            updatePayload.resolutionNotes = resolutionNotes || 'Đã khắc phục hoàn tất';
+          }
+          await updateDoc(docRef, updatePayload);
+          console.log(`Synced update to Firestore for incident ${id}`);
+        } catch (fErr) {
+          console.error("Failed to sync status update to Firestore:", fErr);
+        }
+      }
+
       const updatedReport: IncidentReport = {
         id,
         deviceId: existing[0].deviceId,
@@ -462,12 +848,121 @@ async function startServer() {
         resolutionNotes: resolutionNotes ?? existing[0].resolutionNotes ?? undefined
       };
 
-      await triggerN8nWorkflow('INCIDENT_UPDATED', updatedReport);
-
       res.json(updatedReport);
     } catch (err) {
       console.error('Error updating incident:', err);
       res.status(500).json({ error: 'Database error updating incident' });
+    }
+  });
+
+  // Dedicated Webhook endpoint for Discord/n8n to update incident status
+  app.post('/api/incidents/update-status', async (req, res) => {
+    try {
+      const { id, deviceSn, status, resolutionNotes } = req.body;
+
+      if (!status || !['in_progress', 'resolved'].includes(status)) {
+        return res.status(400).json({ error: "Trạng thái 'status' phải là 'in_progress' hoặc 'resolved'" });
+      }
+
+      if (!id && !deviceSn) {
+        return res.status(400).json({ error: "Yêu cầu cung cấp 'id' (mã sự cố) hoặc 'deviceSn' (mã sê-ri thiết bị)" });
+      }
+
+      let updatedCount = 0;
+      const targetStatus = status; // 'in_progress' or 'resolved'
+      const resolvedAt = targetStatus === 'resolved' ? new Date().toISOString() : null;
+
+      // 1. Update Firestore to trigger client-side real-time listener (onSnapshot)
+      if (dbFirestore) {
+        try {
+          const incidentsCol = collection(dbFirestore, 'incidents');
+          let docIdsToUpdate: string[] = [];
+
+          if (id) {
+            docIdsToUpdate.push(id);
+          } else if (deviceSn) {
+            const q = query(incidentsCol, where('deviceSn', '==', deviceSn));
+            const snapshot = await getDocs(q);
+            snapshot.forEach((d) => {
+              const data = d.data();
+              if (data.status !== 'resolved') {
+                docIdsToUpdate.push(d.id);
+              }
+            });
+          }
+
+          for (const docId of docIdsToUpdate) {
+            const docRef = doc(dbFirestore, 'incidents', docId);
+            const updatePayload: any = {
+              status: targetStatus,
+              updatedAt: new Date().toISOString()
+            };
+            if (targetStatus === 'resolved') {
+              updatePayload.resolvedAt = resolvedAt;
+              updatePayload.resolutionNotes = resolutionNotes || 'Đã khắc phục hoàn tất qua Discord';
+            }
+            await updateDoc(docRef, updatePayload);
+            updatedCount++;
+            console.log(`Successfully updated Firestore incident ${docId} to status ${targetStatus}`);
+          }
+        } catch (fErr) {
+          console.error("Error updating Firestore from server webhook:", fErr);
+        }
+      }
+
+      // 2. Update PostgreSQL (Drizzle) to stay in sync
+      try {
+        if (id) {
+          await db.update(incidents).set({
+            status: targetStatus,
+            resolutionNotes: targetStatus === 'resolved' ? (resolutionNotes || 'Đã khắc phục hoàn tất qua Discord') : null,
+            resolvedAt: resolvedAt
+          }).where(eq(incidents.id, id));
+        } else if (deviceSn) {
+          await db.update(incidents).set({
+            status: targetStatus,
+            resolutionNotes: targetStatus === 'resolved' ? (resolutionNotes || 'Đã khắc phục hoàn tất qua Discord') : null,
+            resolvedAt: resolvedAt
+          }).where(eq(incidents.deviceSn, deviceSn));
+        }
+      } catch (sqlErr) {
+        console.error("Error updating SQL db from server webhook:", sqlErr);
+      }
+
+      // 3. Update device status if resolved
+      if (targetStatus === 'resolved') {
+        try {
+          const sn = deviceSn || (id ? (await db.select().from(incidents).where(eq(incidents.id, id)).limit(1))[0]?.deviceSn : null);
+          if (sn) {
+            await db.update(devices).set({
+              status: 'active',
+              updatedAt: new Date().toISOString()
+            }).where(eq(devices.serialNumber, sn));
+
+            if (dbFirestore) {
+              const qDev = query(collection(dbFirestore, 'devices'), where('serialNumber', '==', sn));
+              const snapDev = await getDocs(qDev);
+              snapDev.forEach(async (d) => {
+                await updateDoc(doc(dbFirestore, 'devices', d.id), {
+                  status: 'active',
+                  updatedAt: new Date().toISOString()
+                });
+              });
+            }
+          }
+        } catch (devErr) {
+          console.error("Error updating device status from server webhook:", devErr);
+        }
+      }
+
+      res.json({
+        success: true,
+        message: `Đã cập nhật trạng thái sự cố sang '${targetStatus}' thành công!`,
+        updatedCount
+      });
+    } catch (err: any) {
+      console.error("Error in update-status endpoint:", err);
+      res.status(500).json({ error: err.message });
     }
   });
 
@@ -545,8 +1040,6 @@ async function startServer() {
         updatedAt: new Date().toISOString()
       }).where(eq(devices.id, record.deviceId));
 
-      await triggerN8nWorkflow(record.type === 'transfer' ? 'DEVICE_TRANSFERRED' : 'DEVICE_RECALLED', record);
-
       res.status(201).json(record);
     } catch (err) {
       console.error('Error creating transfer:', err);
@@ -554,258 +1047,7 @@ async function startServer() {
     }
   });
 
-  // --- N8N WORKFLOW INTEGRATION ENDPOINTS ---
 
-  app.get('/api/n8n/config', async (req, res) => {
-    try {
-      const configResult = await db.select().from(n8nConfig).limit(1);
-      if (configResult.length === 0) {
-        res.json(DEFAULT_N8N_CONFIG);
-      } else {
-        res.json(configResult[0]);
-      }
-    } catch (err) {
-      console.error('Error fetching n8n config:', err);
-      res.json(DEFAULT_N8N_CONFIG);
-    }
-  });
-
-  app.post('/api/n8n/config', async (req, res) => {
-    try {
-      const updateData = req.body;
-      const existing = await db.select().from(n8nConfig).limit(1);
-      const timestamp = new Date().toISOString();
-
-      if (existing.length === 0) {
-        await db.insert(n8nConfig).values({
-          id: 1,
-          webhookBaseUrl: updateData.webhookBaseUrl || '',
-          secretKey: updateData.secretKey || '',
-          activeTriggers: updateData.activeTriggers || {
-            incidentReported: true,
-            maintenanceNeeded: true,
-            partReplaced: true,
-            deviceStatusChanged: true,
-            deviceTransferred: true
-          },
-          lastSyncAt: timestamp
-        });
-      } else {
-        await db.update(n8nConfig).set({
-          webhookBaseUrl: updateData.webhookBaseUrl !== undefined ? updateData.webhookBaseUrl : existing[0].webhookBaseUrl,
-          secretKey: updateData.secretKey !== undefined ? updateData.secretKey : existing[0].secretKey,
-          activeTriggers: updateData.activeTriggers !== undefined ? updateData.activeTriggers : existing[0].activeTriggers,
-          lastSyncAt: timestamp
-        }).where(eq(n8nConfig.id, 1));
-      }
-
-      await addN8nLog('outbound', 'CONFIG_UPDATE', 'success', 'Cập nhật cấu hình Webhook n8n thành công');
-      
-      const updatedConfig = await db.select().from(n8nConfig).limit(1);
-      res.json(updatedConfig[0]);
-    } catch (err) {
-      console.error('Error updating n8n config:', err);
-      res.status(500).json({ error: 'Database error updating n8n config' });
-    }
-  });
-
-  app.get('/api/n8n/logs', async (req, res) => {
-    try {
-      const dbLogs = await db.select().from(n8nWebhookLogs).orderBy(desc(n8nWebhookLogs.timestamp)).limit(50);
-      res.json(dbLogs);
-    } catch (err) {
-      console.error('Error fetching n8n logs:', err);
-      res.status(500).json({ error: 'Database error fetching logs' });
-    }
-  });
-
-  // Inbound Webhook Endpoint for n8n: allows n8n workflow to trigger updates in the app!
-  app.post('/api/n8n/webhook', async (req, res) => {
-    try {
-      const { action, serialNumber, deviceId, status, inspection, replacement, incidentNote } = req.body;
-
-      let affectedDevice: any;
-      if (serialNumber) {
-        const found = await db.select().from(devices).where(eq(devices.serialNumber, serialNumber)).limit(1);
-        if (found.length > 0) affectedDevice = found[0];
-      } else if (deviceId) {
-        const found = await db.select().from(devices).where(eq(devices.id, deviceId)).limit(1);
-        if (found.length > 0) affectedDevice = found[0];
-      }
-
-      await addN8nLog(
-        'inbound',
-        action || 'N8N_INBOUND_WEBHOOK',
-        affectedDevice ? 'success' : 'failed',
-        `n8n nhận lệnh: Action=[${action || 'UPDATE'}], SN=[${serialNumber || deviceId || 'ALL'}], Status=[${status || 'N/A'}]`
-      );
-
-      if (action === 'update_device_status' && affectedDevice) {
-        const targetStatus = status || affectedDevice.status;
-        await db.update(devices).set({
-          status: targetStatus,
-          updatedAt: new Date().toISOString()
-        }).where(eq(devices.id, affectedDevice.id));
-
-        const updated = {
-          ...affectedDevice,
-          status: targetStatus,
-          location: {
-            faculty: affectedDevice.faculty,
-            lectureHall: affectedDevice.lectureHall,
-            room: affectedDevice.room
-          }
-        };
-
-        return res.json({ 
-          success: true, 
-          message: `Đã tự động cập nhật trạng thái thiết bị ${affectedDevice.serialNumber} thành ${targetStatus}`,
-          device: updated 
-        });
-      }
-
-      if (action === 'add_inspection' && affectedDevice && inspection) {
-        const newInsp: InspectionRecord = {
-          id: 'insp-n8n-' + Date.now(),
-          deviceId: affectedDevice.id,
-          deviceSn: affectedDevice.serialNumber,
-          deviceName: affectedDevice.name,
-          inspectorName: inspection.inspectorName || 'n8n Automated Bot',
-          inspectionDate: inspection.inspectionDate || new Date().toISOString().split('T')[0],
-          result: inspection.result || 'passed',
-          checkPower: inspection.checkPower ?? true,
-          checkDisplayAudio: inspection.checkDisplayAudio ?? true,
-          checkConnections: inspection.checkConnections ?? true,
-          checkCleaningFan: inspection.checkCleaningFan ?? true,
-          notes: inspection.notes || 'Cập nhật tự động từ n8n workflow',
-          actionRequired: inspection.actionRequired
-        };
-
-        await db.insert(inspections).values({
-          id: newInsp.id,
-          deviceId: newInsp.deviceId,
-          deviceSn: newInsp.deviceSn,
-          deviceName: newInsp.deviceName,
-          inspectorName: newInsp.inspectorName,
-          inspectionDate: newInsp.inspectionDate,
-          result: newInsp.result,
-          checkPower: newInsp.checkPower,
-          checkDisplayAudio: newInsp.checkDisplayAudio,
-          checkConnections: newInsp.checkConnections,
-          checkCleaningFan: newInsp.checkCleaningFan,
-          notes: newInsp.notes,
-          actionRequired: newInsp.actionRequired || null
-        });
-
-        return res.json({ success: true, message: 'Thêm kiểm tra định kỳ từ n8n thành công', inspection: newInsp });
-      }
-
-      res.json({
-        success: true,
-        receivedAt: new Date().toISOString(),
-        message: 'Đã nhận webhook n8n thành công!',
-        affectedDevice: affectedDevice ? {
-          ...affectedDevice,
-          location: {
-            faculty: affectedDevice.faculty,
-            lectureHall: affectedDevice.lectureHall,
-            room: affectedDevice.room
-          }
-        } : null
-      });
-    } catch (err) {
-      console.error('Error handling n8n webhook:', err);
-      res.status(500).json({ error: 'Database error handling n8n webhook' });
-    }
-  });
-
-  // Exportable n8n Workflow JSON template for users to import directly into n8n
-  app.get('/api/n8n/template', (req, res) => {
-    const n8nTemplate = {
-      name: "n8n Equipment Maintenance & Incident Notification Workflow",
-      nodes: [
-        {
-          parameters: {
-            httpMethod: "POST",
-            path: "equipment-maintenance-webhook",
-            options: {}
-          },
-          name: "Webhook Trigger",
-          type: "n8n-nodes-base.webhook",
-          typeVersion: 1,
-          position: [100, 300]
-        },
-        {
-          parameters: {
-            dataType: "string",
-            value1: "={{$json[\"event\"]}}",
-            rules: {
-              rules: [
-                { value2: "INCIDENT_REPORTED", output: 0 },
-                { value2: "PART_REPLACED", output: 1 },
-                { value2: "INSPECTION_COMPLETED", output: 2 }
-              ]
-            }
-          },
-          name: "Switch Event Type",
-          type: "n8n-nodes-base.switch",
-          typeVersion: 1,
-          position: [320, 300]
-        },
-        {
-          parameters: {
-            chatId: "-100123456789",
-            text: "🚨 *BÁO CÁO SỰ CỐ MỚI THIẾT BỊ GIẢNG ĐƯỜNG*\n\n🔹 *Thiết bị:* {{$json[\"data\"][\"deviceName\"]}}\n🔹 *Mã SN:* {{$json[\"data\"][\"deviceSn\"]}}\n📍 *Vị trí:* {{$json[\"data\"][\"faculty\"]}} - {{$json[\"data\"][\"room\"]}}\n⚠️ *Mức độ:* {{$json[\"data\"][\"severity\"]}}\n📝 *Mô tả:* {{$json[\"data\"][\"description\"]}}\n\n_Vui lòng cử kỹ thuật viên kiểm tra khẩn cấp!_",
-            additionalFields: { parse_mode: "Markdown" }
-          },
-          name: "Telegram Alert Bot",
-          type: "n8n-nodes-base.telegram",
-          typeVersion: 1,
-          position: [560, 180]
-        },
-        {
-          parameters: {
-            operation: "append",
-            sheetId: "1AbCdEfGhIjKlMnOpQrStUvWxYz_SHEET_ID",
-            range: "Lịch sử Thay Vật tư!A:F",
-            options: {}
-          },
-          name: "Google Sheets Sync",
-          type: "n8n-nodes-base.googleSheets",
-          typeVersion: 1,
-          position: [560, 320]
-        },
-        {
-          parameters: {
-            requestMethod: "POST",
-            url: "={{$node[\"Webhook Trigger\"].json[\"appUrl\"] || \"https://your-app-domain.com\"}}/api/n8n/webhook",
-            jsonParameters: true,
-            bodyParametersJson: "{\n  \"action\": \"update_device_status\",\n  \"serialNumber\": \"{{$json[\"data\"][\"deviceSn\"]}}\",\n  \"status\": \"maintenance_needed\"\n}"
-          },
-          name: "HTTP Return to App",
-          type: "n8n-nodes-base.httpRequest",
-          typeVersion: 1,
-          position: [560, 460]
-        }
-      ],
-      connections: {
-        "Webhook Trigger": {
-          main: [[{ node: "Switch Event Type", type: "main", index: 0 }]]
-        },
-        "Switch Event Type": {
-          main: [
-            [{ node: "Telegram Alert Bot", type: "main", index: 0 }],
-            [{ node: "Google Sheets Sync", type: "main", index: 0 }],
-            [{ node: "HTTP Return to App", type: "main", index: 0 }]
-          ]
-        }
-      }
-    };
-
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', 'attachment; filename=n8n-maintenance-workflow.json');
-    res.json(n8nTemplate);
-  });
 
   // Serve Vite in development or static files in production
   if (process.env.NODE_ENV !== 'production') {

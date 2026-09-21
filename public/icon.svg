@@ -1,0 +1,67 @@
+<svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Rounded square background for PWA icon -->
+  <rect width="512" height="512" rx="112" fill="#0F4C81"/>
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="#0F4C81" stroke="#2563EB" stroke-width="8"/>
+  
+  {/* Inner Shield / Badge */}
+  <path 
+    d="M256 64 L416 112 V288 C416 392 320 448 256 464 C192 448 96 392 96 288 V112 Z" 
+    fill="#FFFFFF" 
+    stroke="#0F4C81" 
+    stroke-width="16" 
+    stroke-linejoin="round" 
+  />
+  
+  {/* Letters DUE */}
+  <text 
+    x="125" 
+    y="280" 
+    fill="#F26522" 
+    font-family="system-ui, -apple-system, sans-serif" 
+    font-weight="900" 
+    font-size="140" 
+    letter-spacing="-4"
+  >
+    D
+  </text>
+  <text 
+    x="220" 
+    y="280" 
+    fill="#009640" 
+    font-family="system-ui, -apple-system, sans-serif" 
+    font-weight="900" 
+    font-size="140"
+    letter-spacing="-4"
+  >
+    U
+  </text>
+  <text 
+    x="315" 
+    y="280" 
+    fill="#0056B3" 
+    font-family="system-ui, -apple-system, sans-serif" 
+    font-weight="900" 
+    font-size="140"
+    letter-spacing="-4"
+  >
+    E
+  </text>
+
+  {/* SINCE 1975 */}
+  <line x1="130" y1="330" x2="200" y2="330" stroke="#F26522" stroke-width="6" stroke-linecap="round" />
+  <text 
+    x="256" 
+    y="337" 
+    fill="#0F4C81" 
+    font-family="system-ui, -apple-system, sans-serif" 
+    font-weight="800" 
+    font-size="34" 
+    text-anchor="middle"
+    letter-spacing="1"
+  >
+    SINCE 1975
+  </text>
+  <line x1="312" y1="330" x2="382" y2="330" stroke="#F26522" stroke-width="6" stroke-linecap="round" />
+  
+
+</svg>

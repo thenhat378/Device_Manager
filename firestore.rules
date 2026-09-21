@@ -28,6 +28,9 @@ service cloud.firestore {
     match /transfers/{docId} {
       allow read, write: if true;
     }
+    match /inventories/{docId} {
+      allow read, write: if true;
+    }
 
     // Users collection
     match /users/{userId} {
