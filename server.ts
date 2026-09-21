@@ -35,44 +35,17 @@ try {
   console.error("Failed to initialize Firestore on server:", err);
 }
 
-async function safeTriggerWebhook(url: string, payload: any, retries = 3, delayMs = 1000): Promise<Response> {
-  let lastError: any = null;
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout to prevent hanging the app
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-
-      if (res.ok) {
-        return res;
-      }
-      if (res.status >= 500) {
-        throw new Error(`Server returned error status: ${res.status}`);
-      }
-      return res; // Return non-retryable response
-    } catch (err: any) {
-      lastError = err;
-      console.warn(`Webhook attempt ${attempt} failed: ${err.message || err}. Retrying in ${delayMs * attempt}ms...`);
-      if (attempt < retries) {
-        await new Promise(resolve => setTimeout(resolve, delayMs * attempt)); // Exponential backoff
-      }
-    }
-  }
-  throw lastError || new Error('All webhook attempts failed');
-}
-
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
+
+  // Auto clean-up any Telegram webhook on startup if token exists
+  const defaultTgToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (defaultTgToken) {
+    fetch(`https://api.telegram.org/bot${defaultTgToken}/deleteWebhook?drop_pending_updates=true`).catch(() => {});
+  }
 
   // Utility to push to n8n webhook log in database
 
@@ -391,37 +364,7 @@ async function startServer() {
         updatedAt: new Date().toISOString()
       }).where(eq(devices.id, report.deviceId));
 
-      // Trigger n8n Telegram workflow if webhook is configured in env
-      if (process.env.N8N_WEBHOOK_URL) {
-        const formatRoom = (rm: string) => {
-          if (!rm) return 'Không rõ phòng';
-          if (rm.toLowerCase().startsWith('phòng')) return rm;
-          return `Phòng ${rm}`;
-        };
-
-        const telegramMessageText = `🚨BÁO CÁO SỰ CỐ THIẾT BỊ MỚI 🚨\n` +
-          `Thông tin chi tiết\n` +
-          `🏢 Vị trí / Phòng\n` +
-          `${formatRoom(report.room)}\n` +
-          `📟 Thiết bị cần báo lỗi:\n` +
-          `${report.deviceName}\n` +
-          `👤 Người báo cáo\n` +
-          `${report.reporterName || 'Cán Bộ Kỹ Thuật'}\n` +
-          `📝 Mô tả từ người dùng\n` +
-          `${report.description}`;
-
-        safeTriggerWebhook(process.env.N8N_WEBHOOK_URL, {
-          event: 'new_incident',
-          timestamp: new Date().toISOString(),
-          message: telegramMessageText,
-          incident: report
-        }).then(() => {
-          console.log('Successfully triggered n8n Telegram webhook for incident:', report.id);
-        }).catch(webhookErr => {
-          console.warn('Could not trigger optional n8n webhook (non-fatal):', webhookErr.message || webhookErr);
-        });
-      }
-
+      // Device status updated to damaged
       res.status(201).json(report);
     } catch (err) {
       console.error('Error creating incident:', err);
@@ -485,56 +428,7 @@ do_khan_cap: "Chưa xác định"`;
 
 
 
-  app.post('/api/n8n/trigger-telegram', async (req, res) => {
-    try {
-      const { webhookUrl, message, incident } = req.body;
-      const targetUrl = webhookUrl || process.env.N8N_WEBHOOK_URL;
-      
-      if (!targetUrl) {
-        return res.status(400).json({ error: 'Chưa cấu hình n8n Webhook URL' });
-      }
 
-      let formattedMsg = message;
-      if (!formattedMsg && incident) {
-        const formatRoom = (rm: string) => {
-          if (!rm) return 'Không rõ phòng';
-          if (rm.toLowerCase().startsWith('phòng')) return rm;
-          return `Phòng ${rm}`;
-        };
-        formattedMsg = `🚨BÁO CÁO SỰ CỐ THIẾT BỊ MỚI 🚨\n` +
-          `Thông tin chi tiết\n` +
-          `🏢 Vị trí / Phòng\n` +
-          `${formatRoom(incident.room || incident.roomName)}\n` +
-          `📟 Thiết bị cần báo lỗi:\n` +
-          `${incident.deviceName}\n` +
-          `👤 Người báo cáo\n` +
-          `${incident.reporterName || 'Cán Bộ Kỹ Thuật'}\n` +
-          `📝 Mô tả từ người dùng\n` +
-          `${incident.description || ''}`;
-      }
-
-      const payload = {
-        source: 'DUE Equipment Management',
-        timestamp: new Date().toISOString(),
-        message: formattedMsg || 'Test kích hoạt n8n workflow gửi Telegram thông báo sự cố',
-        incident: incident || {
-          deviceSn: 'TEST-SN-01',
-          deviceName: 'Thiết bị kiểm tra giả lập',
-          faculty: 'Khoa CNTT',
-          room: 'Phòng thực hành A1',
-          severity: 'urgent',
-          description: 'Kiểm tra tín hiệu kết nối Telegram từ hệ thống n8n workflow.'
-        }
-      };
-
-      const response = await safeTriggerWebhook(targetUrl, payload);
-      const responseText = await response.text();
-      res.json({ success: true, status: response.status, responseText });
-    } catch (err: any) {
-      console.warn('Could not trigger n8n webhook (non-fatal):', err.message || err);
-      res.status(502).json({ error: `Không thể kết nối n8n webhook: ${err.message || 'Lỗi mạng hoặc sai tên miền URL'}` });
-    }
-  });
 
   // Helper to read Telegram configuration from Firestore database
   async function getTelegramConfigFromDb(): Promise<{ telegramBotToken?: string; telegramChatId?: string; telegramGroupName?: string } | null> {
@@ -775,37 +669,51 @@ do_khan_cap: "Chưa xác định"`;
         if (isReporting && (detectedRoom || detectedDevice)) {
           const roomName = detectedRoom ? (detectedRoom.startsWith('PHÒNG') ? detectedRoom : `Phòng ${detectedRoom}`) : 'Chưa rõ phòng (Vui lòng chọn)';
           const devName = detectedDevice || 'Thiết bị phòng học';
+          const severity = lower.includes('cháy') || lower.includes('nổ') || lower.includes('khẩn') || lower.includes('đang dạy') || lower.includes('gấp') ? 'urgent' : 'high';
+          const timeStr = new Date().toLocaleString('vi-VN');
+          const zaloMsg = `[BÁO HỎNG CSVC DUE - ĐẠI HỌC KINH TẾ]\n` +
+            `📍 Vị trí: ${roomName}\n` +
+            `📟 Thiết bị: ${devName}\n` +
+            `⚠️ Mức độ: ${severity.toUpperCase()}\n` +
+            `📝 Chi tiết sự cố: ${userMsg}\n` +
+            `👤 Người báo: ${currentUser?.name || 'Cán bộ / Giảng viên'}\n` +
+            `🕒 Thời gian: ${timeStr}\n` +
+            `📞 Kính gửi Hotline Kỹ thuật CSVC (Zalo 0987119665) tiếp nhận xử lý!`;
+
           return {
-            reply: `Tôi đã nhận diện sự cố của bạn tại **${roomName}** đối với thiết bị **${devName}**.\n\nBạn có muốn gửi ngay báo cáo này tới bộ phận kỹ thuật qua Telegram Bot (@japancsvcbot) không? Bạn hãy kiểm tra thông tin dưới đây và nhấn nút gửi xác nhận nhé!`,
+            reply: `Tôi đã nhận diện sự cố của bạn tại **${roomName}** đối với **${devName}**.\n\nBạn hãy kiểm tra thông tin dưới đây và nhấn nút **"Gửi tin trực tiếp đến Zalo Hotline (0987119665)"** để chuyển phiếu ngay tới Kỹ thuật viên trực ban nhé!`,
             incidentDraft: {
               room: roomName,
               deviceName: devName,
               description: userMsg,
-              severity: lower.includes('cháy') || lower.includes('nổ') || lower.includes('khẩn') ? 'urgent' : 'high'
+              severity: severity,
+              zaloFormattedMessage: zaloMsg,
+              zaloPhone: '0987119665',
+              zaloChatUrl: 'https://zalo.me/0987119665'
             }
           };
         }
 
         if (lower.includes('hdmi') || lower.includes('không nhận cáp') || lower.includes('không lên hình')) {
           return {
-            reply: `💡 **Hướng dẫn khắc phục nhanh Máy chiếu / Cáp HDMI:**\n\n1. **Kiểm tra nguồn**: Đảm bảo máy chiếu đã bật đèn xanh (Power LED).\n2. **Chọn đúng cổng Input**: Dùng remote hoặc nút bấm trên máy chiếu chọn đúng **HDMI 1** hoặc **HDMI 2** tương ứng với cổng cắm.\n3. **Phím tắt xuất màn hình**: Trên laptop nhấn tổ hợp phím **Windows + P** và chọn chế độ **Duplicate** (Nhân bản màn hình).\n4. **Cắm chặt 2 đầu cáp**: Rút cáp HDMI ra và cắm lại thật chặt ở cả cổng laptop và ổ cắm bàn giáo viên.\n\n*Nếu vẫn không lên, bạn hãy gõ ví dụ: "Phòng D305 hỏng máy chiếu" để tôi tạo phiếu báo hỏng ngay nhé!*`
+            reply: `💡 **Hướng dẫn khắc phục nhanh Máy chiếu / Cáp HDMI:**\n\n1. **Kiểm tra nguồn**: Đảm bảo máy chiếu đã bật đèn xanh (Power LED).\n2. **Chọn đúng cổng Input**: Dùng remote hoặc nút bấm trên máy chiếu chọn đúng **HDMI 1** hoặc **HDMI 2** tương ứng với cổng cắm.\n3. **Phím tắt xuất màn hình**: Trên laptop nhấn tổ hợp phím **Windows + P** và chọn chế độ **Duplicate** (Nhân bản màn hình).\n4. **Cắm chặt 2 đầu cáp**: Rút cáp HDMI ra và cắm lại thật chặt ở cả cổng laptop và ổ cắm bàn giáo viên.\n\n*Nếu vẫn không lên hình, bạn hãy gõ ví dụ: "Phòng D305 hỏng máy chiếu" để tôi tạo phiếu gửi ngay Zalo Hotline 0987119665 nhé!*`
           };
         }
 
         if (lower.includes('micro') || lower.includes('mic') || lower.includes('âm thanh')) {
           return {
-            reply: `🎤 **Hướng dẫn kiểm tra Micro / Hệ thống Âm thanh:**\n\n1. **Kiểm tra pin**: Bật công tắc micro, nếu đèn báo đỏ mờ hoặc không sáng, mic đã hết pin (liên hệ phòng bảo vệ hoặc phòng trực nhận pin mới).\n2. **Tần số thu phát**: Đảm bảo micro và bộ thu đặt cùng kênh tần số.\n3. **Volume Amply**: Kiểm tra núm vặn Master Volume trên bàn điều khiển amply của bục giảng.\n\n*Nếu cần hỗ trợ gấp trong giờ dạy, bạn có thể bấm nút báo hỏng để kỹ thuật viên mang thiết bị dự phòng tới ngay!*`
+            reply: `🎤 **Hướng dẫn kiểm tra Micro / Hệ thống Âm thanh:**\n\n1. **Kiểm tra pin**: Bật công tắc micro, nếu đèn báo đỏ mờ hoặc không sáng, mic đã hết pin (liên hệ phòng bảo vệ hoặc phòng trực nhận pin mới).\n2. **Tần số thu phát**: Đảm bảo micro và bộ thu đặt cùng kênh tần số.\n3. **Volume Amply**: Kiểm tra núm vặn Master Volume trên bàn điều khiển amply của bục giảng.\n\n*Nếu cần hỗ trợ gấp trong giờ dạy, bạn có thể bấm nút báo hỏng để gửi tin trực tiếp đến Hotline Zalo 0987119665!*`
           };
         }
 
         if (lower.includes('điều hoà') || lower.includes('máy lạnh')) {
           return {
-            reply: `❄️ **Hướng dẫn sử dụng Điều hoà:**\n\n1. Đảm bảo aptomat (cầu dao) điều hoà trên tường phòng học đã được bật ON.\n2. Dùng remote điều khiển hướng thẳng vào mắt nhận của dàn lạnh, bấm nút Power và chọn chế độ **Cool** (hình bông tuyết), cài đặt nhiệt độ từ 24 - 26°C.\n3. Đóng kín cửa sổ và cửa ra vào phòng học để đảm bảo hiệu quả làm mát.\n\n*Nếu điều hoà phát tiếng ồn lớn, chảy nước hoặc không phả hơi lạnh, vui lòng báo hỏng để đội bảo trì xử lý.*`
+            reply: `❄️ **Hướng dẫn sử dụng Điều hoà:**\n\n1. Đảm bảo aptomat (cầu dao) điều hoà trên tường phòng học đã được bật ON.\n2. Dùng remote điều khiển hướng thẳng vào mắt nhận của dàn lạnh, bấm nút Power và chọn chế độ **Cool** (hình bông tuyết), cài đặt nhiệt độ từ 24 - 26°C.\n3. Đóng kín cửa sổ và cửa ra vào phòng học để đảm bảo hiệu quả làm mát.\n\n*Nếu điều hoà phát tiếng ồn lớn, chảy nước hoặc không phả hơi lạnh, vui lòng gõ sự cố để chuyển tới Hotline Zalo 0987119665 nhé.*`
           };
         }
 
         return {
-          reply: `Xin chào ${currentUser?.name || 'Thầy/Cô'}! Tôi là Trợ lý AI CSVC DUE. Tôi có thể giúp Thầy/Cô:\n\n• **Báo hỏng nhanh**: Gõ trực tiếp sự cố, ví dụ: *"Phòng D305 máy chiếu không lên nguồn"*\n• **Khắc phục lỗi giảng đường**: Tư vấn cách kết nối HDMI, chỉnh âm thanh micro, remote điều hoà...\n• **Thông báo Telegram**: Khi Thầy/Cô xác nhận, sự cố sẽ tự động gửi tới kênh kỹ thuật Telegram (@japancsvcbot) tức thì!\n\nThầy/Cô đang gặp vấn đề gì tại phòng học cần hỗ trợ ạ?`
+          reply: `Xin chào ${currentUser?.name || 'Thầy/Cô'}! Tôi là **Trợ lý AI CSVC DUE** (Đại học Kinh tế - ĐH Đà Nẵng).\n\nTôi sẵn sàng hỗ trợ Quý Thầy/Cô:\n• **Báo hỏng giảng đường**: Gõ sự cố (ví dụ: *"Phòng D305 máy chiếu không lên nguồn"*)\n• **Khắc phục lỗi nhanh**: Hướng dẫn cắm cáp HDMI, pin micro, remote điều hoà...\n• **Gửi tin trực tiếp đến Zalo Hotline (0987119665)**: Chuyển thẳng tới Kỹ thuật viên trực ban tức thì chỉ với 1 chạm!\n\nQuý Thầy/Cô đang gặp vấn đề gì tại phòng học cần hỗ trợ ạ?`
         };
       };
 
@@ -819,32 +727,36 @@ do_khan_cap: "Chưa xác định"`;
           httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
         });
 
-        const systemPrompt = `Bạn là Trợ lý Ảo AI hỗ trợ kỹ thuật và Cơ sở vật chất (CSVC) của Trường Đại học Kinh tế - Đại học Đà Nẵng (DUE).
+        const systemPrompt = `Bạn là Trợ lý Ảo AI Quản lý & Hỗ trợ Kỹ thuật Cơ sở vật chất (CSVC) của Trường Đại học Kinh tế - Đại học Đà Nẵng (DUE).
 Người đang trò chuyện với bạn là: ${currentUser?.name || 'Cán bộ / Giảng viên'} (${currentUser?.department || 'Khoa/Phòng ban'}, vai trò: ${currentUser?.role || 'staff'}).
+Hotline Kỹ thuật CSVC trực tiếp: 0987119665 (Hỗ trợ Zalo & Điện thoại trực ban).
+
 Nhiệm vụ của bạn:
-1. Trả lời thân thiện, lịch sự, chuẩn mực môi trường giáo dục đại học, phong cách hỗ trợ chuyên nghiệp, súc tích.
-2. Hướng dẫn nhanh cán bộ/giảng viên cách xử lý các vấn đề thường gặp với thiết bị giảng đường:
-   - Máy chiếu: không lên nguồn, mờ, không nhận hình, bấm Windows + P, chọn Source Input.
-   - Cáp HDMI/VGA: lỏng cáp, cong chân, đổi đầu cáp.
-   - Âm thanh: Micro hết pin, micro rè hú, amply mất tiếng, dây jack 3.5mm.
-   - Điều hoà: aptomat, remote, nhiệt độ thích hợp.
-   - Thiết bị điện, quạt, bàn ghế.
-3. KHI NGƯỜI DÙNG CÓ Ý ĐỊNH BÁO HỎNG / BÁO SỰ CỐ (ví dụ nhắc đến phòng, thiết bị bị hỏng hoặc yêu cầu sửa chữa):
-   - Bạn PHẢI trích xuất thông tin để tạo incidentDraft.
+1. Trả lời thân thiện, kính trọng, lịch sự ("Kính chào Quý Thầy/Cô", "Dạ thưa Thầy/Cô..."), văn phong chuẩn mực môi trường giáo dục đại học, súc tích và giải quyết việc ngay.
+2. Hướng dẫn nhanh cán bộ/giảng viên cách tự khắc phục nhanh tại lớp học:
+   - Máy chiếu: kiểm tra đèn nguồn LED xanh, chọn Source HDMI 1/2 trên remote, bấm phím tắt Windows + P chọn Duplicate (nhân bản màn hình).
+   - Cáp HDMI/VGA: cắm chặt 2 đầu cáp ở laptop và ổ cắm bàn giáo viên, kiểm tra chân cắm.
+   - Âm thanh: Micro hết pin (nhận pin dự phòng phòng bảo vệ/trực ban), tần số micro, núm vặn Master Volume của bục giảng.
+   - Điều hoà: kiểm tra aptomat trên tường bật ON, dùng remote bật chế độ Cool 24-26°C.
+   - Mất điện ổ cắm, quạt, bàn ghế giảng đường.
+3. KHI NGƯỜI DÙNG CÓ Ý ĐỊNH BÁO HỎNG / BÁO SỰ CỐ (ví dụ nhắc đến phòng học, thiết bị bị lỗi, chập chờn, hoặc cần kỹ thuật viên hỗ trợ):
+   - Bạn PHẢI trích xuất thông tin để tạo incidentDraft gửi trực tiếp tới Hotline Zalo 0987119665.
    - Định dạng trả về BẮT BUỘC là JSON hợp lệ theo cấu trúc sau:
    {
-     "reply": "Lời giải thích hoặc hướng dẫn thân thiện gửi tới người dùng",
+     "reply": "Lời phản hồi thân thiện, thông báo đã nhận diện sự cố và mời Thầy/Cô nhấn nút gửi trực tiếp đến Hotline Zalo 0987119665",
      "incidentDraft": {
        "room": "Tên phòng (ví dụ: Phòng D305, Phòng H102)",
        "deviceName": "Tên thiết bị (ví dụ: Máy chiếu Panasonic, Dây cáp HDMI, Micro không dây, Điều hoà)",
-       "description": "Tóm tắt ngắn gọn mô tả sự cố",
-       "severity": "low | medium | high | urgent"
+       "description": "Tóm tắt ngắn gọn mô tả sự cố từ người dùng",
+       "severity": "low | medium | high | urgent",
+       "zaloFormattedMessage": "[BÁO HỎNG CSVC DUE - ĐẠI HỌC KINH TẾ]\\n📍 Vị trí: ...\\n📟 Thiết bị: ...\\n⚠️ Mức độ: KHẨN CẤP / CAO\\n📝 Nội dung: ...\\n👤 Người báo: ${currentUser?.name || 'Cán bộ'}\\n📞 Hotline Kỹ thuật CSVC (Zalo 0987119665) tiếp nhận!",
+       "zaloPhone": "0987119665"
      }
    }
-4. NẾU NGƯỜI DÙNG CHỈ HỎI ĐÁP BÌNH THƯỜNG (không báo hỏng):
+4. NẾU NGƯỜI DÙNG CHỈ HỎI ĐÁP / TƯ VẤN THÔNG THƯỜNG (không báo hỏng):
    - Trả về JSON:
    {
-     "reply": "Nội dung trả lời chi tiết, định dạng Markdown đẹp, có gạch đầu dòng rõ ràng."
+     "reply": "Nội dung trả lời chi tiết, định dạng Markdown đẹp, có gạch đầu dòng rõ ràng, kèm nhắc Hotline Zalo 0987119665 khi cần hỗ trợ khẩn cấp."
    }
 
 QUAN TRỌNG: Chỉ trả về JSON duy nhất, không kèm markdown \`\`\`json\`\`\`.`;
@@ -895,7 +807,7 @@ QUAN TRỌNG: Chỉ trả về JSON duy nhất, không kèm markdown \`\`\`json\
       console.error('Error in chat assistant endpoint:', err);
       // Guarantee 200 response with smart fallback so client never gets an error
       return res.json({
-        reply: `Xin chào! Tôi là Trợ lý AI CSVC DUE. Tôi có thể hỗ trợ bạn kiểm tra máy chiếu, cáp HDMI, âm thanh micro hoặc tạo phiếu báo hỏng gửi Hotline Zalo 0987119665 & Telegram tới kỹ thuật viên. Bạn vui lòng mô tả phòng học và thiết bị cần hỗ trợ nhé!`
+        reply: `Xin chào Quý Thầy/Cô! Tôi là **Trợ lý AI CSVC DUE** (Đại học Kinh tế - ĐH Đà Nẵng). Tôi có thể hỗ trợ kiểm tra máy chiếu, cáp HDMI, âm thanh micro hoặc tạo phiếu báo hỏng gửi trực tiếp tới Hotline Zalo Kỹ thuật viên **0987119665**. Quý Thầy/Cô vui lòng cho biết phòng học và thiết bị cần hỗ trợ nhé!`
       });
     }
   });

@@ -106,7 +106,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
         {
           id: 'welcome-staff',
           sender: 'bot',
-          text: `👋 Xin chào **${currentUser.name}** (${currentUser.department || 'Cán bộ Khoa/Giảng đường'})!\n\nTôi là **Trợ lý Ảo CSVC DUE**, sẵn sàng hỗ trợ Quý Thầy/Cô:\n• **Báo hỏng tức thì**: Gõ sự cố hoặc phòng học (ví dụ: *"Phòng D305 máy chiếu không lên"*).\n• **Thông báo Zalo 0987119665**: Sự cố sẽ lập tức được chuyển tới số điện thoại Zalo của Kỹ thuật viên trực ban **0987119665**.\n• **Theo dõi lịch sử tiếp nhận & phản hồi**: Quý Thầy/Cô có thể theo dõi tiến độ xử lý và trích xuất báo cáo tại tab bên cạnh bất cứ lúc nào!`,
+          text: `👋 Xin chào **${currentUser.name}** (${currentUser.department || 'Cán bộ Khoa/Giảng đường'})!\n\nTôi là **Trợ lý Ảo CSVC DUE**, sẵn sàng hỗ trợ Quý Thầy/Cô:\n• **Báo hỏng tức thì**: Gõ sự cố hoặc phòng học (ví dụ: *"Phòng D305 máy chiếu không lên"*).\n• **Gửi tin trực tiếp đến Hotline Zalo 0987119665**: Sự cố sẽ lập tức chuyển đến số điện thoại Zalo của Kỹ thuật viên trực ban **0987119665** tiếp nhận xử lý.\n• **Theo dõi lịch sử tiếp nhận & phản hồi**: Quý Thầy/Cô có thể theo dõi tiến độ xử lý và trích xuất báo cáo tại tab bên cạnh bất cứ lúc nào!`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -207,7 +207,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
           {
             id: `bot-fallback-${Date.now()}`,
             sender: 'bot',
-            text: `Tôi đã ghi nhận sự cố tại **${detectedRoom || 'Phòng học'}** đối với **${detectedDevice}**.\n\nBạn hãy kiểm tra thông tin dưới đây và nhấn nút gửi xác nhận để phiếu báo hỏng được lưu hệ thống và phát thông báo tới **Zalo (${ZALO_PHONE})** và Telegram nhé!`,
+            text: `Tôi đã ghi nhận sự cố tại **${detectedRoom || 'Phòng học'}** đối với **${detectedDevice}**.\n\nQuý Thầy/Cô hãy kiểm tra thông tin dưới đây và nhấn nút gửi để lưu phiếu và gửi tin trực tiếp đến **Hotline Zalo Kỹ thuật (${ZALO_PHONE})** nhé!`,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             incidentDraft: {
               room: detectedRoom || 'Phòng học',
@@ -223,7 +223,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
           {
             id: `bot-fallback-info-${Date.now()}`,
             sender: 'bot',
-            text: `Tôi đã nhận tin nhắn của bạn. Nếu cần báo hỏng gấp thiết bị giảng đường, bạn có thể gõ rõ tên phòng và thiết bị (Ví dụ: *"Phòng D305 hỏng máy chiếu"*) hoặc liên hệ trực tiếp qua số Zalo hỗ trợ kỹ thuật **${ZALO_PHONE}** nhé!`,
+            text: `Tôi đã nhận tin nhắn của Quý Thầy/Cô. Nếu cần báo hỏng gấp thiết bị giảng đường, Thầy/Cô có thể gõ rõ tên phòng và thiết bị (Ví dụ: *"Phòng D305 hỏng máy chiếu"*) hoặc bấm liên hệ trực tiếp tới Hotline Zalo hỗ trợ kỹ thuật **${ZALO_PHONE}**!`,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           }
         ]);
@@ -246,7 +246,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
       const deviceId = matchedDevice?.id || `DEV-STAFF-${Date.now()}`;
       const faculty = matchedDevice?.location?.faculty || currentUser.department || 'Khoa / Giảng đường';
 
-      // Submit incident to Firestore
+      // Submit incident to database
       await onAddIncident({
         deviceId,
         deviceSn,
@@ -260,6 +260,27 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
         zaloSent: true
       });
 
+      // Dispatch directly to Zalo Hotline endpoint
+      try {
+        await fetch('/api/zalo/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone: ZALO_PHONE,
+            incident: {
+              id: deviceSn,
+              room: draft.room,
+              deviceName: draft.deviceName,
+              description: draft.description,
+              reporterName: currentUser.name
+            },
+            reporterName: currentUser.name
+          })
+        });
+      } catch (notifyErr) {
+        console.warn('Could not post to /api/zalo/notify:', notifyErr);
+      }
+
       // Mark message as submitted
       setMessages(prev => prev.map(m => m.id === msgId ? { ...m, incidentSubmitted: true } : m));
 
@@ -269,7 +290,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
         {
           id: `bot-confirm-${Date.now()}`,
           sender: 'bot',
-          text: `🎉 **Đã gửi báo hỏng thành công!**\n• Phòng: **${draft.room}**\n• Thiết bị: **${draft.deviceName}**\n• Trạng thái: **Đã lưu phiếu & phát thông báo tới Hotline Zalo (${ZALO_PHONE}) & Telegram**.\n\nKỹ thuật viên CSVC sẽ tiếp nhận và phản hồi tới Thầy/Cô sớm nhất. Thầy/Cô có thể bấm vào tab **"Lịch Sử Tiếp Nhận & Phản Hồi"** để theo dõi chi tiết!`,
+          text: `🎉 **Đã gửi báo hỏng thành công!**\n• Phòng: **${draft.room}**\n• Thiết bị: **${draft.deviceName}**\n• Kênh tiếp nhận: **Đã lưu phiếu & gửi tin trực tiếp đến Hotline Zalo (${ZALO_PHONE})**.\n\nKỹ thuật viên CSVC sẽ tiếp nhận và phản hồi tới Quý Thầy/Cô sớm nhất. Thầy/Cô có thể bấm tab **"Lịch Sử Tiếp Nhận & Phản Hồi"** để theo dõi và xuất báo cáo!`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -277,7 +298,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
       if (onAddToast) {
         onAddToast(
           'Đã gửi báo hỏng CSVC',
-          `Sự cố tại ${draft.room} đã được lưu và gửi tới Zalo ${ZALO_PHONE}`,
+          `Sự cố tại ${draft.room} đã được gửi trực tiếp đến Hotline Zalo ${ZALO_PHONE}`,
           'success',
           deviceSn
         );
@@ -445,7 +466,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
         `"${inc.deviceSn || ''}"`,
         `"${severityText}"`,
         `"${(inc.description || '').replace(/"/g, '""')}"`,
-        `"Zalo ${ZALO_PHONE} / Telegram"`,
+        `"Hotline Zalo ${ZALO_PHONE}"`,
         `"${statusText}"`,
         `"${inc.acceptedBy || ''}"`,
         `"${acceptedTime}"`,
@@ -499,7 +520,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
             Trợ Lý AI CSVC & Quản Lý Sự Cố Giảng Đường
           </h2>
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-            Hỗ trợ cán bộ khoa báo hỏng nhanh qua chatbot, tự động thông báo tới Hotline Zalo <strong className="text-emerald-300">0987119665</strong>, đồng bộ Telegram, theo dõi tiến trình tiếp nhận và trích xuất báo cáo.
+            Hỗ trợ cán bộ khoa báo hỏng nhanh qua chatbot, tự động gửi tin trực tiếp đến Hotline Zalo <strong className="text-emerald-300">0987119665</strong>, theo dõi tiến trình tiếp nhận và trích xuất báo cáo.
           </p>
         </div>
 
@@ -510,24 +531,21 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
             target="_blank"
             rel="noopener noreferrer"
             className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-4 py-2.5 text-xs font-bold shadow-lg shadow-emerald-900/30 transition transform active:scale-95 border border-white/20"
-            title="Nhấn để mở cuộc trò chuyện Zalo với Kỹ thuật viên CSVC"
+            title="Nhấn để mở cuộc trò chuyện Zalo với Kỹ thuật viên CSVC 0987119665"
           >
             <Phone className="h-4 w-4 text-emerald-100 animate-pulse" />
             <span>Hotline Zalo: {ZALO_PHONE}</span>
             <ExternalLink className="h-3.5 w-3.5 opacity-80" />
           </a>
 
-          {onOpenTelegramModal && (
-            <button
-              type="button"
-              onClick={onOpenTelegramModal}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 px-3 py-2.5 text-xs font-semibold border border-slate-700 transition"
-              title="Cài đặt Telegram Bot @japancsvcbot"
-            >
-              <SendHorizontal className="h-3.5 w-3.5 text-sky-400" />
-              <span>{telegramChatId ? 'Telegram Đã Nối' : 'Cấu Hình Telegram'}</span>
-            </button>
-          )}
+          <a
+            href={`tel:${ZALO_PHONE}`}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-emerald-300 px-3 py-2.5 text-xs font-semibold border border-slate-700 transition"
+            title={`Gọi điện trực tiếp tới số ${ZALO_PHONE}`}
+          >
+            <Phone className="h-3.5 w-3.5 text-emerald-400" />
+            <span>Gọi Trực Tiếp</span>
+          </a>
         </div>
       </div>
 
@@ -615,8 +633,8 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
                       Sẵn sàng 24/7
                     </span>
                   </h3>
-                  <p className="text-[11px] text-blue-200">
-                    Báo hỏng gửi tới Zalo {ZALO_PHONE} & Bot Telegram @japancsvcbot
+                  <p className="text-[11px] text-emerald-200 font-medium">
+                    Hotline Kỹ thuật CSVC Zalo: {ZALO_PHONE} (Trực ban giảng đường)
                   </p>
                 </div>
               </div>
@@ -706,9 +724,10 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
                             <span className="text-slate-700 font-medium">{msg.incidentDraft.description}</span>
                           </div>
                           <div className="col-span-2 pt-1 border-t border-dashed border-amber-200 flex items-center justify-between text-[10px]">
-                            <span className="text-slate-500">Thông báo gửi tới:</span>
-                            <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                              Zalo {ZALO_PHONE} & Telegram
+                            <span className="text-slate-500 font-medium">Kênh gửi tin:</span>
+                            <span className="font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded border border-emerald-300 flex items-center gap-1">
+                              <Phone className="h-3 w-3 text-emerald-600" />
+                              Zalo Hotline {ZALO_PHONE} (Trực tiếp)
                             </span>
                           </div>
                         </div>
@@ -719,10 +738,10 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
                             type="button"
                             disabled={loading}
                             onClick={() => handleConfirmSubmitIncident(msg.id, msg.incidentDraft!)}
-                            className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-2 px-3 text-xs font-bold shadow transition active:scale-95 disabled:opacity-50"
+                            className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white py-2 px-3 text-xs font-bold shadow transition active:scale-95 disabled:opacity-50"
                           >
                             <Send className="h-3.5 w-3.5" />
-                            <span>Gửi Báo Hỏng Ngay</span>
+                            <span>Gửi Báo Hỏng & Gửi Zalo</span>
                           </button>
 
                           <a
@@ -730,10 +749,10 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={() => handleCopyZaloText(msg.incidentDraft)}
-                            className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-3 text-xs font-bold shadow transition active:scale-95"
+                            className="flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white py-2 px-3 text-xs font-bold shadow transition active:scale-95"
                           >
-                            <Phone className="h-3.5 w-3.5" />
-                            <span>Nhắn Zalo: {ZALO_PHONE}</span>
+                            <Phone className="h-3.5 w-3.5 text-blue-200" />
+                            <span>Mở Zalo: {ZALO_PHONE}</span>
                             <ExternalLink className="h-3 w-3" />
                           </a>
                         </div>

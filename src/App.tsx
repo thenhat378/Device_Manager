@@ -626,24 +626,9 @@ export default function App() {
          await updateDoc(doc(db, 'devices', dev.id), { status: 'damaged', updatedAt: new Date().toISOString() });
       }
 
-      // Send Telegram & n8n Alerts
+      // Send Notifications to Hotline Zalo 0987119665
+      await sendZaloAlert(newReport, 'new');
       await sendTelegramAlert(newReport, 'new');
-      await sendN8nAlert(newReport, 'accepted', 'Báo cáo sự cố mới');
-
-      // Trigger Zalo Notification to Hotline 0987119665
-      try {
-        await fetch('/api/zalo/notify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone: '0987119665',
-            incident: newReport,
-            reporterName: currentUser?.name || report.reporterName
-          })
-        });
-      } catch (zErr) {
-        console.warn('Could not log Zalo notification:', zErr);
-      }
 
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'incidents');
@@ -710,27 +695,25 @@ export default function App() {
     }
   };
 
-  const sendN8nAlert = async (incident: any, eventType: 'accepted' | 'resolved', resolutionNotes?: string) => {
-    const webhookUrl = localStorage.getItem('DUE_N8N_WEBHOOK_URL');
-    if (!webhookUrl) return;
-
+  const sendZaloAlert = async (incident: any, eventType: 'new' | 'accepted' | 'resolved', notes?: string) => {
     try {
-      await fetch('/api/n8n/trigger-telegram', {
+      await fetch('/api/zalo/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          webhookUrl,
+          phone: '0987119665',
           incident: {
             ...incident,
             eventType,
-            resolutionNotes,
+            notes,
             updatedBy: currentUser?.name || 'Cán Bộ Kỹ Thuật',
             updatedAt: new Date().toISOString()
-          }
+          },
+          reporterName: incident.reporterName || currentUser?.name || 'Cán bộ'
         })
       });
     } catch (err) {
-      console.error('Error sending n8n alert from frontend:', err);
+      console.warn('Error sending Zalo alert:', err);
     }
   };
 
@@ -749,9 +732,9 @@ export default function App() {
         }
       }
 
-      // Send Telegram & n8n Alerts
+      // Send Notifications to Hotline Zalo 0987119665
+      await sendZaloAlert(inc, 'resolved', resolutionNotes);
       await sendTelegramAlert(inc, 'resolved', resolutionNotes);
-      await sendN8nAlert(inc, 'resolved', resolutionNotes);
     }
 
     try {
@@ -772,9 +755,9 @@ export default function App() {
     if (inc) {
       addToast('Đã Tiếp Nhận Sự Cố', `Sự cố của ${inc.deviceName} (${inc.deviceSn}) đã được tiếp nhận để xử lý.`, 'info', inc.deviceSn);
       
-      // Send Telegram & n8n Alerts
+      // Send Notifications to Hotline Zalo 0987119665
+      await sendZaloAlert(inc, 'accepted', acceptanceNotes);
       await sendTelegramAlert(inc, 'accepted', acceptanceNotes);
-      await sendN8nAlert(inc, 'accepted', acceptanceNotes);
     }
 
     try {
