@@ -193,6 +193,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
     localStorage.getItem('DUE_TELEGRAM_CHAT_ID') || ''
   );
   const [telegramTesting, setTelegramTesting] = useState(false);
+  const [telegramScanning, setTelegramScanning] = useState(false);
   const [telegramTestResult, setTelegramTestResult] = useState<string | null>(null);
 
   const [configTab, setConfigTab] = useState<'discord' | 'telegram' | 'n8n' | 'device'>('discord');
@@ -366,6 +367,35 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
       setTelegramTestResult(`❌ Lỗi kết nối: ${err.message}`);
     } finally {
       setTelegramTesting(false);
+    }
+  };
+
+  const handleScanTelegramChats = async () => {
+    if (!telegramBotToken.trim()) {
+      setTelegramTestResult('❌ Vui lòng nhập Bot Token trước.');
+      return;
+    }
+    setTelegramScanning(true);
+    setTelegramTestResult(null);
+    try {
+      const res = await fetch('/api/telegram/get-updates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: telegramBotToken.trim() })
+      });
+      const data = await res.json();
+      if (res.ok && data.chats && data.chats.length > 0) {
+        const firstChat = data.chats[0];
+        setTelegramChatId(firstChat.id);
+        localStorage.setItem('DUE_TELEGRAM_CHAT_ID', firstChat.id);
+        setTelegramTestResult(`✅ Đã quét thấy Chat ID: <b>${firstChat.id}</b> (${firstChat.name || firstChat.type}). Đã tự động điền vào ô Chat ID!`);
+      } else {
+        setTelegramTestResult('⚠️ Không tìm thấy Chat ID. Hãy chắc chắn bạn đã gửi ít nhất 1 tin nhắn (ví dụ: /start) tới bot @japancsvcbot trên Telegram rồi nhấn lại nút quét.');
+      }
+    } catch (err: any) {
+      setTelegramTestResult(`❌ Lỗi quét Chat ID: ${err.message}`);
+    } finally {
+      setTelegramScanning(false);
     }
   };
 
@@ -1873,8 +1903,13 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                   </div>
                 ) : configTab === 'telegram' ? (
                   <div className="space-y-3.5">
-                    <div className="bg-sky-50/70 text-sky-900 p-3 rounded-xl border border-sky-200 text-[11px] leading-relaxed">
-                      💡 <b>Cấu hình Telegram Bot (@japancsvcbot):</b> Nhập Bot Token và Chat ID hoặc Group ID nhận tin báo hỏng. Hệ thống sẽ gửi thông báo sự cố trực tiếp qua bot <b>@japancsvcbot</b> ngay khi có báo cáo từ cán bộ.
+                    <div className="bg-sky-50/70 text-sky-900 p-3 rounded-xl border border-sky-200 text-[11px] leading-relaxed space-y-1">
+                      <p>💡 <b>Cấu hình Telegram Bot (@japancsvcbot):</b></p>
+                      <p className="text-[10px] text-sky-800">
+                        1. Mở Telegram, tìm và nhắn tin cho bot <b>@japancsvcbot</b> (gửi `/start` hoặc `hello`).<br/>
+                        2. Nhấn nút <b>"🔍 Tự động quét Chat ID"</b> bên dưới để hệ thống nhận diện và điền Chat ID của bạn.<br/>
+                        3. Nhấn <b>Lưu</b> và <b>Gửi thử</b> để kiểm tra nhận tin.
+                      </p>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1895,7 +1930,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                             type="text"
                             value={telegramChatId}
                             onChange={(e) => setTelegramChatId(e.target.value)}
-                            placeholder="Ví dụ: -100123456789 hoặc @japancsvcbot"
+                            placeholder="Ví dụ: -100123456789 hoặc 12345678"
                             className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white text-slate-800 focus:outline-none focus:border-sky-500 font-mono shadow-sm"
                           />
                           <button
@@ -1927,9 +1962,19 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                     </div>
 
                     <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-slate-100">
-                      <span className="text-[10px] text-slate-500">
-                        Bot đang kết nối: <strong className="text-sky-700">@japancsvcbot</strong>
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleScanTelegramChats}
+                          disabled={telegramScanning || !telegramBotToken.trim()}
+                          className="rounded-xl bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-3 py-2 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                        >
+                          {telegramScanning ? 'Đang quét...' : '🔍 Tự động quét Chat ID'}
+                        </button>
+                        <span className="text-[10px] text-slate-500">
+                          Bot: <strong className="text-sky-700">@japancsvcbot</strong>
+                        </span>
+                      </div>
                       <button
                         type="button"
                         onClick={handleTestTelegram}
@@ -1941,9 +1986,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                     </div>
 
                     {telegramTestResult && (
-                      <div className="text-xs font-semibold p-3 rounded-xl bg-white border border-slate-200 shadow-sm text-slate-800">
-                        {telegramTestResult}
-                      </div>
+                      <div className="text-xs font-semibold p-3 rounded-xl bg-white border border-slate-200 shadow-sm text-slate-800" dangerouslySetInnerHTML={{ __html: telegramTestResult }} />
                     )}
                   </div>
                 ) : configTab === 'n8n' ? (
