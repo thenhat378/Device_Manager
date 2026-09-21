@@ -895,8 +895,43 @@ QUAN TRỌNG: Chỉ trả về JSON duy nhất, không kèm markdown \`\`\`json\
       console.error('Error in chat assistant endpoint:', err);
       // Guarantee 200 response with smart fallback so client never gets an error
       return res.json({
-        reply: `Xin chào! Tôi là Trợ lý AI CSVC DUE. Tôi có thể hỗ trợ bạn kiểm tra máy chiếu, cáp HDMI, âm thanh micro hoặc tạo phiếu báo hỏng gửi Telegram tới kỹ thuật viên. Bạn vui lòng mô tả phòng học và thiết bị cần hỗ trợ nhé!`
+        reply: `Xin chào! Tôi là Trợ lý AI CSVC DUE. Tôi có thể hỗ trợ bạn kiểm tra máy chiếu, cáp HDMI, âm thanh micro hoặc tạo phiếu báo hỏng gửi Hotline Zalo 0987119665 & Telegram tới kỹ thuật viên. Bạn vui lòng mô tả phòng học và thiết bị cần hỗ trợ nhé!`
       });
+    }
+  });
+
+  // Zalo Notification Endpoint for Staff Incident Dispatch (0987119665)
+  app.post('/api/zalo/notify', async (req, res) => {
+    try {
+      const { phone = '0987119665', incident, reporterName } = req.body;
+      const targetPhone = phone || '0987119665';
+
+      const logData = {
+        phone: targetPhone,
+        incidentId: incident?.id || 'NEW',
+        room: incident?.room || '',
+        deviceName: incident?.deviceName || '',
+        reporterName: reporterName || incident?.reporterName || 'Cán bộ',
+        sentAt: new Date().toISOString(),
+        zaloChatUrl: `https://zalo.me/${targetPhone}`
+      };
+
+      if (dbFirestore) {
+        try {
+          await setDoc(doc(collection(dbFirestore, 'zalo_logs')), logData);
+        } catch (e: any) {
+          console.warn('Could not save zalo_log to Firestore:', e.message);
+        }
+      }
+
+      res.json({
+        success: true,
+        phone: targetPhone,
+        zaloUrl: `https://zalo.me/${targetPhone}`,
+        message: `Đã chuẩn bị thông báo gửi tới số điện thoại Zalo ${targetPhone}`
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 

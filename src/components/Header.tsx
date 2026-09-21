@@ -16,7 +16,8 @@ import {
   Download, 
   ClipboardList, 
   Menu,
-  Bot
+  Bot,
+  Phone
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -158,6 +159,21 @@ export const Header: React.FC<HeaderProps> = ({
                 <Bot className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 <span className="hidden md:inline">{telegramChatId ? 'Telegram OK' : 'Cài Telegram'}</span>
               </button>
+            )}
+
+            {/* Hotline Zalo Button */}
+            {currentUser?.role === 'staff' && (
+              <a
+                href="https://zalo.me/0987119665"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-bold text-white transition shadow-sm active:scale-95 border border-emerald-400/40"
+                title="Mở Zalo kết nối trực tiếp Kỹ thuật viên 0987119665"
+                id="header-zalo-btn"
+              >
+                <Phone className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-200 animate-pulse" />
+                <span className="hidden sm:inline font-mono">Zalo 0987119665</span>
+              </a>
             )}
 
             {/* Simple User Logout without Avatar */}

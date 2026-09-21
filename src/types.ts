@@ -88,6 +88,12 @@ export interface IncidentReport {
   reportedAt: string;
   resolvedAt?: string;
   resolutionNotes?: string;
+  acceptedBy?: string;
+  acceptedAt?: string;
+  acceptanceNotes?: string;
+  responderName?: string;
+  zaloPhone?: string;
+  zaloSent?: boolean;
 }
 
 

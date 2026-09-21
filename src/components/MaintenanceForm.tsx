@@ -2523,12 +2523,59 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
 
             {/* Incidents Active List */}
             <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 space-y-4">
-              <h4 className="font-bold text-sm text-slate-900 border-b border-slate-100 pb-3 flex items-center justify-between">
-                <span>Danh Sách Sự Cố Đang Xử Lý</span>
-                <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
-                  {incidents.filter(i => i.status !== 'resolved').length} chưa xong
-                </span>
-              </h4>
+              <div className="border-b border-slate-100 pb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h4 className="font-bold text-sm text-slate-900">Danh Sách Sự Cố Đang Xử Lý</h4>
+                  <p className="text-[11px] text-slate-500">Tiếp nhận, phản hồi và theo dõi lịch sử xử lý</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const headers = ['Mã thiết bị / SN', 'Tên thiết bị', 'Phòng', 'Khoa', 'Mức độ', 'Trạng thái', 'Mô tả sự cố', 'Người báo', 'Ngày báo', 'Zalo Hotline', 'Người tiếp nhận', 'Ngày tiếp nhận', 'Người xử lý', 'Ngày xử lý', 'Kết quả xử lý'];
+                      const rows = incidents.map(inc => [
+                        inc.deviceSn || '',
+                        inc.deviceName || '',
+                        inc.room || '',
+                        inc.faculty || '',
+                        inc.severity === 'urgent' ? 'Khẩn cấp' : inc.severity === 'high' ? 'Cao' : inc.severity === 'medium' ? 'Trung bình' : 'Thấp',
+                        inc.status === 'resolved' ? 'Đã khắc phục' : inc.status === 'in_progress' ? 'Đang xử lý' : 'Chờ tiếp nhận',
+                        (inc.description || '').replace(/"/g, '""'),
+                        inc.reporterName || '',
+                        new Date(inc.reportedAt).toLocaleString('vi-VN'),
+                        inc.zaloPhone || '0987119665',
+                        inc.acceptedBy || '',
+                        inc.acceptedAt ? new Date(inc.acceptedAt).toLocaleString('vi-VN') : '',
+                        inc.responderName || '',
+                        inc.resolvedAt ? new Date(inc.resolvedAt).toLocaleString('vi-VN') : '',
+                        (inc.resolutionNotes || '').replace(/"/g, '""')
+                      ]);
+
+                      const csvContent = '\uFEFF' + [
+                        headers.join(','),
+                        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+                      ].join('\n');
+
+                      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                      const url = URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.setAttribute('href', url);
+                      link.setAttribute('download', `Bao_cao_su_co_CSVC_${new Date().toISOString().slice(0, 10)}.csv`);
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      URL.revokeObjectURL(url);
+                    }}
+                    className="flex items-center gap-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-2.5 py-1 text-[11px] font-bold transition shadow-sm"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Xuất CSV / Excel
+                  </button>
+                  <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                    {incidents.filter(i => i.status !== 'resolved').length} chưa xong
+                  </span>
+                </div>
+              </div>
 
               <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
                 {incidents.length === 0 ? (
@@ -2561,15 +2608,37 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                       </div>
 
                       <div className="flex flex-col gap-1 text-[10px] text-slate-500 border-t border-slate-200/60 pt-2">
-                        <p className="flex items-center gap-1.5">
-                          <span>👤 Người báo:</span>
-                          <strong className="text-slate-700">{inc.reporterName}</strong>
-                        </p>
+                        <div className="flex items-center justify-between">
+                          <p className="flex items-center gap-1.5">
+                            <span>👤 Người báo:</span>
+                            <strong className="text-slate-700">{inc.reporterName}</strong>
+                          </p>
+                          <span className="text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded text-[9px] font-mono font-bold">
+                            Zalo: {inc.zaloPhone || '0987119665'}
+                          </span>
+                        </div>
                         <p className="flex items-center gap-1.5">
                           <span>🕒 Thời gian báo:</span>
                           <span>{new Date(inc.reportedAt).toLocaleString('vi-VN')}</span>
                         </p>
                       </div>
+
+                      {/* Display Acceptance info */}
+                      {inc.acceptedBy && (
+                        <div className="bg-indigo-50/70 border border-indigo-200/60 rounded-xl p-2.5 text-[11px] space-y-1">
+                          <p className="font-bold text-indigo-800 text-[10px] uppercase tracking-wider flex items-center gap-1">
+                            <span>🔧 KTV Tiếp nhận:</span> {inc.acceptedBy}
+                          </p>
+                          {inc.acceptanceNotes && (
+                            <p className="text-slate-600 text-[10px] italic">"{inc.acceptanceNotes}"</p>
+                          )}
+                          {inc.acceptedAt && (
+                            <p className="text-[9px] text-slate-400">
+                              🕒 Lúc: {new Date(inc.acceptedAt).toLocaleString('vi-VN')}
+                            </p>
+                          )}
+                        </div>
+                      )}
 
                       {/* Display Status Badge */}
                       <div className="flex items-center justify-between border-t border-slate-200/60 pt-2">
@@ -2593,11 +2662,12 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                             <span>📢 Kết quả xử lý:</span>
                           </p>
                           <p className="text-slate-700 font-medium text-[11px] leading-relaxed">{inc.resolutionNotes || 'Đã xử lý hoàn tất'}</p>
-                          {inc.resolvedAt && (
-                            <p className="text-[9px] text-slate-400 italic pt-1 border-t border-emerald-100/50 mt-1">
-                              🕒 Hoàn tất lúc: {new Date(inc.resolvedAt).toLocaleString('vi-VN')}
-                            </p>
-                          )}
+                          <div className="flex items-center justify-between text-[9px] text-slate-400 italic pt-1 border-t border-emerald-100/50 mt-1">
+                            <span>👨‍🔧 Người xử lý: <b>{inc.responderName || 'Kỹ thuật viên CSVC'}</b></span>
+                            {inc.resolvedAt && (
+                              <span>🕒 {new Date(inc.resolvedAt).toLocaleString('vi-VN')}</span>
+                            )}
+                          </div>
                         </div>
                       )}
 

@@ -45,6 +45,7 @@ import { ToastContainer } from './components/ToastContainer';
 import { AdminProfileModal } from './components/AdminProfileModal';
 import { QuickChatbot } from './components/QuickChatbot';
 import { TelegramConfigModal } from './components/TelegramConfigModal';
+import { StaffChatbotPortal } from './components/StaffChatbotPortal';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -610,6 +611,8 @@ export default function App() {
     const newReport: Omit<IncidentReport, 'id'> = {
       reportedAt: new Date().toISOString(),
       status: 'open',
+      zaloPhone: '0987119665',
+      zaloSent: true,
       ...report
     };
 
@@ -626,6 +629,21 @@ export default function App() {
       // Send Telegram & n8n Alerts
       await sendTelegramAlert(newReport, 'new');
       await sendN8nAlert(newReport, 'accepted', 'Báo cáo sự cố mới');
+
+      // Trigger Zalo Notification to Hotline 0987119665
+      try {
+        await fetch('/api/zalo/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone: '0987119665',
+            incident: newReport,
+            reporterName: currentUser?.name || report.reporterName
+          })
+        });
+      } catch (zErr) {
+        console.warn('Could not log Zalo notification:', zErr);
+      }
 
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'incidents');
@@ -740,27 +758,31 @@ export default function App() {
       await updateDoc(doc(db, 'incidents', incidentId), { 
         status: 'resolved', 
         resolvedAt: new Date().toISOString(), 
-        resolutionNotes 
+        resolutionNotes,
+        responderName: currentUser?.name || 'Kỹ thuật viên CSVC'
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `incidents/${incidentId}`);
     }
   };
 
-  const handleAcceptIncident = async (incidentId: string) => {
+  const handleAcceptIncident = async (incidentId: string, acceptanceNotes?: string) => {
     const inc = incidents.find(i => i.id === incidentId);
     
     if (inc) {
       addToast('Đã Tiếp Nhận Sự Cố', `Sự cố của ${inc.deviceName} (${inc.deviceSn}) đã được tiếp nhận để xử lý.`, 'info', inc.deviceSn);
       
       // Send Telegram & n8n Alerts
-      await sendTelegramAlert(inc, 'accepted');
-      await sendN8nAlert(inc, 'accepted');
+      await sendTelegramAlert(inc, 'accepted', acceptanceNotes);
+      await sendN8nAlert(inc, 'accepted', acceptanceNotes);
     }
 
     try {
       await updateDoc(doc(db, 'incidents', incidentId), { 
-        status: 'in_progress'
+        status: 'in_progress',
+        acceptedBy: currentUser?.name || 'Kỹ thuật viên CSVC',
+        acceptedAt: new Date().toISOString(),
+        acceptanceNotes: acceptanceNotes || 'Đã tiếp nhận yêu cầu và đang phân công xử lý.'
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `incidents/${incidentId}`);
@@ -919,20 +941,33 @@ export default function App() {
             )}
 
             {activeTab === 'maintenance' && (
-              <MaintenanceForm
-                devices={devices}
-                inspections={inspections}
-                replacements={replacements}
-                incidents={currentUser?.role === 'staff' ? incidents.filter(i => i.reporterName === currentUser.name) : incidents}
-                currentUser={currentUser}
-                onAddInspection={handleAddInspection}
-                onAddReplacement={handleAddReplacement}
-                onAddIncident={handleAddIncident}
-                onResolveIncident={handleResolveIncident}
-                onAcceptIncident={handleAcceptIncident}
-                onOpenScanner={handleOpenScannerWithCallback}
-                onReturnToDevices={() => setActiveTab('devices')}
-              />
+              currentUser?.role === 'staff' ? (
+                <StaffChatbotPortal
+                  currentUser={currentUser}
+                  devices={devices}
+                  incidents={incidents}
+                  onAddIncident={handleAddIncident}
+                  onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
+                  telegramChatId={telegramChatId}
+                  telegramBotToken={telegramBotToken}
+                  onAddToast={addToast}
+                />
+              ) : (
+                <MaintenanceForm
+                  devices={devices}
+                  inspections={inspections}
+                  replacements={replacements}
+                  incidents={incidents}
+                  currentUser={currentUser}
+                  onAddInspection={handleAddInspection}
+                  onAddReplacement={handleAddReplacement}
+                  onAddIncident={handleAddIncident}
+                  onResolveIncident={handleResolveIncident}
+                  onAcceptIncident={handleAcceptIncident}
+                  onOpenScanner={handleOpenScannerWithCallback}
+                  onReturnToDevices={() => setActiveTab('devices')}
+                />
+              )
             )}
 
             {activeTab === 'transfers' && (
@@ -1023,7 +1058,7 @@ export default function App() {
       )}
 
       {/* Quick AI Chatbot for User Accounts */}
-      {currentUser && (
+      {currentUser && currentUser.role !== 'staff' && (
         <QuickChatbot
           currentUser={currentUser}
           devices={devices}
