@@ -335,17 +335,26 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: telegramBotToken.trim() })
       });
-      const data = await res.json();
+      
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch (parseErr) {
+        throw new Error('Máy chủ đang khởi động lại hoặc không phản hồi dữ liệu hợp lệ. Vui lòng thử lại sau giây lát.');
+      }
+
       if (res.ok && data.chats && data.chats.length > 0) {
         const firstChat = data.chats[0];
         setTelegramChatId(firstChat.id);
         localStorage.setItem('DUE_TELEGRAM_CHAT_ID', firstChat.id);
         setTelegramTestResult(`✅ Đã quét thấy Chat ID: <b>${firstChat.id}</b> (${firstChat.name || firstChat.type}). Đã tự động điền vào ô Chat ID!`);
       } else {
-        setTelegramTestResult('⚠️ Không tìm thấy Chat ID. Hãy chắc chắn bạn đã gửi ít nhất 1 tin nhắn (ví dụ: /start) tới bot @japancsvcbot trên Telegram rồi nhấn lại nút quét.');
+        const msg = data.error || '⚠️ Không tìm thấy tin nhắn mới. Hãy chắc chắn bạn đã gửi ít nhất 1 tin nhắn (ví dụ: /start) tới bot @japancsvcbot trên Telegram rồi nhấn lại nút quét.';
+        setTelegramTestResult(msg);
       }
     } catch (err: any) {
-      setTelegramTestResult(`❌ Lỗi quét Chat ID: ${err.message}`);
+      setTelegramTestResult(`❌ ${err.message || 'Lỗi kết nối tới Telegram'}`);
     } finally {
       setTelegramScanning(false);
     }

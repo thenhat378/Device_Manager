@@ -611,6 +611,7 @@ do_khan_cap: "Chưa xác định"`;
     }
   });
 
+  // Telegram Get Updates Endpoint (Auto-Scan Chat IDs)
   app.post('/api/telegram/get-updates', async (req, res) => {
     try {
       const { token } = req.body;
@@ -620,10 +621,18 @@ do_khan_cap: "Chưa xác định"`;
         return res.status(400).json({ error: 'Chưa cung cấp Telegram Bot Token' });
       }
 
-      const response = await fetch(`https://api.telegram.org/bot${targetToken}/getUpdates?timeout=3`);
+      // Query updates without long-polling timeout to avoid 409 Conflict with other connections
+      const response = await fetch(`https://api.telegram.org/bot${targetToken}/getUpdates?limit=50`);
       const data: any = await response.json();
 
       if (!data.ok) {
+        // If conflict error from Telegram
+        if (data.description && data.description.includes('Conflict')) {
+          return res.status(400).json({ 
+            error: 'Bot đang có kết nối khác mở. Bạn vui lòng mở Telegram, nhắn tin bất kỳ (ví dụ /start) cho bot @japancsvcbot rồi thử lại hoặc nhập Chat ID thủ công.',
+            isConflict: true 
+          });
+        }
         return res.status(400).json({ error: data.description || 'Lỗi từ Telegram API' });
       }
 
@@ -647,6 +656,142 @@ do_khan_cap: "Chưa xác định"`;
     } catch (err: any) {
       console.error('Error getting Telegram updates:', err);
       res.status(500).json({ error: err.message || 'Lỗi kết nối tới Telegram API' });
+    }
+  });
+
+  // AI Chatbot Assistant for User Accounts
+  app.post('/api/chat/assistant', async (req, res) => {
+    try {
+      const { message, history = [], currentUser, knownRooms = [], knownDevices = [] } = req.body;
+
+      if (!message || typeof message !== 'string') {
+        return res.status(400).json({ error: 'Nội dung tin nhắn không hợp lệ' });
+      }
+
+      const apiKey = process.env.GEMINI_API_KEY;
+
+      // Fallback response generator if Gemini is unavailable
+      const generateFallbackResponse = (userMsg: string) => {
+        const lower = userMsg.toLowerCase();
+        
+        // Extract room if any (e.g. D305, H102, A201, E101, etc.)
+        const roomMatch = userMsg.match(/([a-zA-Z]\d{3}|phòng\s+[a-zA-Z0-9]+)/i);
+        const detectedRoom = roomMatch ? roomMatch[0].toUpperCase() : '';
+
+        // Device identification
+        let detectedDevice = '';
+        if (lower.includes('máy chiếu') || lower.includes('projector')) detectedDevice = 'Máy chiếu';
+        else if (lower.includes('hdmi')) detectedDevice = 'Dây cáp HDMI';
+        else if (lower.includes('vga')) detectedDevice = 'Dây VGA';
+        else if (lower.includes('mic') || lower.includes('micro')) detectedDevice = 'Âm thanh (Micro)';
+        else if (lower.includes('loa') || lower.includes('âm thanh')) detectedDevice = 'Âm thanh (Loa/Amply)';
+        else if (lower.includes('điều hoà') || lower.includes('máy lạnh')) detectedDevice = 'Điều hoà nhiệt độ';
+        else if (lower.includes('điện') || lower.includes('ổ cắm') || lower.includes('quạt')) detectedDevice = 'Thiết bị điện';
+        else if (lower.includes('bàn') || lower.includes('ghế')) detectedDevice = 'Bàn ghế';
+
+        const isReporting = lower.includes('hỏng') || lower.includes('hư') || lower.includes('lỗi') || lower.includes('không lên') || lower.includes('chập chờn') || lower.includes('báo sự cố') || lower.includes('báo hỏng');
+
+        if (isReporting && (detectedRoom || detectedDevice)) {
+          const roomName = detectedRoom ? (detectedRoom.startsWith('PHÒNG') ? detectedRoom : `Phòng ${detectedRoom}`) : 'Chưa rõ phòng (Vui lòng chọn)';
+          const devName = detectedDevice || 'Thiết bị phòng học';
+          return {
+            reply: `Tôi đã nhận diện sự cố của bạn tại **${roomName}** đối với thiết bị **${devName}**.\n\nBạn có muốn gửi ngay báo cáo này tới bộ phận kỹ thuật qua Telegram Bot (@japancsvcbot) không? Bạn hãy kiểm tra thông tin dưới đây và nhấn nút gửi xác nhận nhé!`,
+            incidentDraft: {
+              room: roomName,
+              deviceName: devName,
+              description: userMsg,
+              severity: lower.includes('cháy') || lower.includes('nổ') || lower.includes('khẩn') ? 'urgent' : 'high'
+            }
+          };
+        }
+
+        if (lower.includes('hdmi') || lower.includes('không nhận cáp') || lower.includes('không lên hình')) {
+          return {
+            reply: `💡 **Hướng dẫn khắc phục nhanh Máy chiếu / Cáp HDMI:**\n\n1. **Kiểm tra nguồn**: Đảm bảo máy chiếu đã bật đèn xanh (Power LED).\n2. **Chọn đúng cổng Input**: Dùng remote hoặc nút bấm trên máy chiếu chọn đúng **HDMI 1** hoặc **HDMI 2** tương ứng với cổng cắm.\n3. **Phím tắt xuất màn hình**: Trên laptop nhấn tổ hợp phím **Windows + P** và chọn chế độ **Duplicate** (Nhân bản màn hình).\n4. **Cắm chặt 2 đầu cáp**: Rút cáp HDMI ra và cắm lại thật chặt ở cả cổng laptop và ổ cắm bàn giáo viên.\n\n*Nếu vẫn không lên, bạn hãy gõ ví dụ: "Phòng D305 hỏng máy chiếu" để tôi tạo phiếu báo hỏng ngay nhé!*`
+          };
+        }
+
+        if (lower.includes('micro') || lower.includes('mic') || lower.includes('âm thanh')) {
+          return {
+            reply: `🎤 **Hướng dẫn kiểm tra Micro / Hệ thống Âm thanh:**\n\n1. **Kiểm tra pin**: Bật công tắc micro, nếu đèn báo đỏ mờ hoặc không sáng, mic đã hết pin (liên hệ phòng bảo vệ hoặc phòng trực nhận pin mới).\n2. **Tần số thu phát**: Đảm bảo micro và bộ thu đặt cùng kênh tần số.\n3. **Volume Amply**: Kiểm tra núm vặn Master Volume trên bàn điều khiển amply của bục giảng.\n\n*Nếu cần hỗ trợ gấp trong giờ dạy, bạn có thể bấm nút báo hỏng để kỹ thuật viên mang thiết bị dự phòng tới ngay!*`
+          };
+        }
+
+        if (lower.includes('điều hoà') || lower.includes('máy lạnh')) {
+          return {
+            reply: `❄️ **Hướng dẫn sử dụng Điều hoà:**\n\n1. Đảm bảo aptomat (cầu dao) điều hoà trên tường phòng học đã được bật ON.\n2. Dùng remote điều khiển hướng thẳng vào mắt nhận của dàn lạnh, bấm nút Power và chọn chế độ **Cool** (hình bông tuyết), cài đặt nhiệt độ từ 24 - 26°C.\n3. Đóng kín cửa sổ và cửa ra vào phòng học để đảm bảo hiệu quả làm mát.\n\n*Nếu điều hoà phát tiếng ồn lớn, chảy nước hoặc không phả hơi lạnh, vui lòng báo hỏng để đội bảo trì xử lý.*`
+          };
+        }
+
+        return {
+          reply: `Xin chào ${currentUser?.name || 'Thầy/Cô'}! Tôi là Trợ lý AI CSVC DUE. Tôi có thể giúp Thầy/Cô:\n\n• **Báo hỏng nhanh**: Gõ trực tiếp sự cố, ví dụ: *"Phòng D305 máy chiếu không lên nguồn"*\n• **Khắc phục lỗi giảng đường**: Tư vấn cách kết nối HDMI, chỉnh âm thanh micro, remote điều hoà...\n• **Thông báo Telegram**: Khi Thầy/Cô xác nhận, sự cố sẽ tự động gửi tới kênh kỹ thuật Telegram (@japancsvcbot) tức thì!\n\nThầy/Cô đang gặp vấn đề gì tại phòng học cần hỗ trợ ạ?`
+        };
+      };
+
+      if (!apiKey) {
+        return res.json(generateFallbackResponse(message));
+      }
+
+      try {
+        const aiClient = new GoogleGenAI({
+          apiKey: apiKey,
+          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+        });
+
+        const systemPrompt = `Bạn là Trợ lý Ảo AI hỗ trợ kỹ thuật và Cơ sở vật chất (CSVC) của Trường Đại học Kinh tế - Đại học Đà Nẵng (DUE).
+Người đang trò chuyện với bạn là: ${currentUser?.name || 'Cán bộ / Giảng viên'} (${currentUser?.department || 'Khoa/Phòng ban'}, vai trò: ${currentUser?.role || 'staff'}).
+Nhiệm vụ của bạn:
+1. Trả lời thân thiện, lịch sự, chuẩn mực môi trường giáo dục đại học, phong cách hỗ trợ chuyên nghiệp, súc tích.
+2. Hướng dẫn nhanh cán bộ/giảng viên cách xử lý các vấn đề thường gặp với thiết bị giảng đường:
+   - Máy chiếu: không lên nguồn, mờ, không nhận hình, bấm Windows + P, chọn Source Input.
+   - Cáp HDMI/VGA: lỏng cáp, cong chân, đổi đầu cáp.
+   - Âm thanh: Micro hết pin, micro rè hú, amply mất tiếng, dây jack 3.5mm.
+   - Điều hoà: aptomat, remote, nhiệt độ thích hợp.
+   - Thiết bị điện, quạt, bàn ghế.
+3. KHI NGƯỜI DÙNG CÓ Ý ĐỊNH BÁO HỎNG / BÁO SỰ CỐ (ví dụ nhắc đến phòng, thiết bị bị hỏng hoặc yêu cầu sửa chữa):
+   - Bạn PHẢI trích xuất thông tin để tạo incidentDraft.
+   - Định dạng trả về BẮT BUỘC là JSON hợp lệ theo cấu trúc sau:
+   {
+     "reply": "Lời giải thích hoặc hướng dẫn thân thiện gửi tới người dùng",
+     "incidentDraft": {
+       "room": "Tên phòng (ví dụ: Phòng D305, Phòng H102)",
+       "deviceName": "Tên thiết bị (ví dụ: Máy chiếu Panasonic, Dây cáp HDMI, Micro không dây, Điều hoà)",
+       "description": "Tóm tắt ngắn gọn mô tả sự cố",
+       "severity": "low | medium | high | urgent"
+     }
+   }
+4. NẾU NGƯỜI DÙNG CHỈ HỎI ĐÁP BÌNH THƯỜNG (không báo hỏng):
+   - Trả về JSON:
+   {
+     "reply": "Nội dung trả lời chi tiết, định dạng Markdown đẹp, có gạch đầu dòng rõ ràng."
+   }
+
+QUAN TRỌNG: Chỉ trả về JSON duy nhất, không kèm markdown \`\`\`json\`\`\`.`;
+
+        const recentHistory = (history || []).slice(-6).map((h: any) => `${h.sender === 'user' ? 'Người dùng' : 'Trợ lý'}: ${h.text}`).join('\n');
+        const userPrompt = `${recentHistory ? `Lịch sử hội thoại:\n${recentHistory}\n\n` : ''}Tin nhắn mới của người dùng: "${message}"`;
+
+        const aiResponse = await aiClient.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: `${systemPrompt}\n\n${userPrompt}`
+        });
+
+        let responseText = aiResponse.text || '';
+        responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+
+        try {
+          const parsed = JSON.parse(responseText);
+          return res.json(parsed);
+        } catch (jsonErr) {
+          return res.json({ reply: responseText });
+        }
+      } catch (genAiErr: any) {
+        console.warn('Gemini chat assistant fallback:', genAiErr.message);
+        return res.json(generateFallbackResponse(message));
+      }
+    } catch (err: any) {
+      console.error('Error in chat assistant endpoint:', err);
+      res.status(500).json({ error: 'Lỗi xử lý yêu cầu trò chuyện' });
     }
   });
 

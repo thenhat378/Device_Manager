@@ -43,6 +43,7 @@ import { QRGeneratorModal } from './components/QRGeneratorModal';
 import { BatchQRPrintModal } from './components/BatchQRPrintModal';
 import { ToastContainer } from './components/ToastContainer';
 import { AdminProfileModal } from './components/AdminProfileModal';
+import { QuickChatbot } from './components/QuickChatbot';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -56,6 +57,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'devices' | 'maintenance' | 'transfers' | 'analytics' | 'users' | 'inventory'>('devices');
   const [isAdminProfileOpen, setIsAdminProfileOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
 
   useEffect(() => {
     if (currentUser) {
@@ -814,6 +816,7 @@ export default function App() {
         onOpenAdminProfile={() => setIsAdminProfileOpen(true)}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        onOpenChatbot={() => setIsChatbotOpen(true)}
       />
 
       {/* Main Container */}
@@ -833,6 +836,7 @@ export default function App() {
             isOpen={isSidebarOpen}
             setIsOpen={setIsSidebarOpen}
             onOpenAdminProfile={() => setIsAdminProfileOpen(true)}
+            onOpenChatbot={() => setIsChatbotOpen(true)}
           />
 
           {/* Main Content Area */}
@@ -957,6 +961,17 @@ export default function App() {
           currentUser={currentUser}
           onUpdateUser={(updated) => setCurrentUser(updated)}
           onAddToast={addToast}
+        />
+      )}
+
+      {/* Quick AI Chatbot for User Accounts */}
+      {currentUser && (
+        <QuickChatbot
+          currentUser={currentUser}
+          devices={devices}
+          onAddIncident={handleAddIncident}
+          isOpenExternal={isChatbotOpen}
+          onCloseExternal={() => setIsChatbotOpen(false)}
         />
       )}
 

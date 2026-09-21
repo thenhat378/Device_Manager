@@ -9,13 +9,14 @@ import {
   UserCheck, 
   LogOut, 
   Layers, 
-  Building,
-  Bell,
-  ArrowLeftRight,
-  Users,
-  Download,
-  ClipboardList,
-  Menu
+  Building, 
+  Bell, 
+  ArrowLeftRight, 
+  Users, 
+  Download, 
+  ClipboardList, 
+  Menu,
+  Bot
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -29,6 +30,7 @@ interface HeaderProps {
   onInstallApp?: () => void;
   isSidebarOpen?: boolean;
   onToggleSidebar?: () => void;
+  onOpenChatbot?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -41,7 +43,8 @@ export const Header: React.FC<HeaderProps> = ({
   isInstallable,
   onInstallApp,
   isSidebarOpen = false,
-  onToggleSidebar
+  onToggleSidebar,
+  onOpenChatbot
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-slate-900 text-white shadow-lg border-b border-slate-800">
@@ -120,6 +123,19 @@ export const Header: React.FC<HeaderProps> = ({
                     {toastCount}
                   </span>
                 )}
+              </button>
+            )}
+
+            {/* Quick Chatbot AI Assistant Button */}
+            {currentUser && onOpenChatbot && (
+              <button
+                onClick={onOpenChatbot}
+                className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold text-white transition shadow-sm active:scale-95 border border-white/20"
+                title="Mở Trợ lý Chatbot CSVC DUE (Chát nhanh & Báo hỏng)"
+                id="header-open-chatbot-btn"
+              >
+                <Bot className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-300" />
+                <span className="hidden sm:inline">Trợ Lý AI</span>
               </button>
             )}
 
