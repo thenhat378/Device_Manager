@@ -213,7 +213,7 @@ export default function App() {
     if (!currentUser) return;
 
     const unsubDevices = onSnapshot(collection(db, 'devices'), 
-      (snapshot) => setDevices(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Device))),
+      (snapshot) => setDevices(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Device)).filter(d => d.id !== '_settings')),
       (error) => handleFirestoreError(error, OperationType.LIST, 'devices')
     );
     const unsubInspections = onSnapshot(collection(db, 'inspections'), 

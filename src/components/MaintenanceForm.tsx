@@ -200,7 +200,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
 
   useEffect(() => {
     if (!currentUser) return;
-    const unsub = onSnapshot(doc(db, 'devices', '_settings'), (snapshot) => {
+    const unsub = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
         if (data && data.discordWebhookUrl) {
@@ -1836,7 +1836,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                               return;
                             }
                             try {
-                              await setDoc(doc(db, 'devices', '_settings'), { discordWebhookUrl: discordWebhookUrl.trim() }, { merge: true });
+                              await setDoc(doc(db, 'settings', 'app_config'), { discordWebhookUrl: discordWebhookUrl.trim() }, { merge: true });
                               localStorage.setItem('DUE_DISCORD_WEBHOOK_URL', discordWebhookUrl.trim());
                               alert('Đã lưu và đồng bộ cấu hình Discord Webhook toàn hệ thống thành công!');
                             } catch (err) {
@@ -1906,7 +1906,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                                 return;
                               }
                               try {
-                                await setDoc(doc(db, 'devices', '_settings'), { 
+                                await setDoc(doc(db, 'settings', 'app_config'), { 
                                   telegramBotToken: telegramBotToken.trim(),
                                   telegramChatId: telegramChatId.trim()
                                 }, { merge: true });
