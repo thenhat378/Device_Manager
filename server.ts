@@ -695,7 +695,7 @@ do_khan_cap: "Chưa xác định"`;
   // Direct Telegram Integration Endpoints
   app.post('/api/telegram/send', async (req, res) => {
     try {
-      const { token, chatId, message, incident } = req.body;
+      const { token, chatId, message, incident, eventType = 'new', resolutionNotes, updatedBy } = req.body;
       const targetToken = token || process.env.TELEGRAM_BOT_TOKEN || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8';
       const targetChatId = chatId || process.env.TELEGRAM_CHAT_ID;
 
@@ -721,16 +721,27 @@ do_khan_cap: "Chưa xác định"`;
           return `Phòng ${rm}`;
         };
         
-        text = `🚨<b>BÁO CÁO SỰ CỐ THIẾT BỊ MỚI</b> 🚨\n` +
-               `Thông tin chi tiết\n` +
-               `🏢 Vị trí / Phòng\n` +
-               `<b>${escapeHTML(formatRoom(incident.room))}</b>\n` +
-               `📟 Thiết bị cần báo lỗi:\n` +
-               `<b>${escapeHTML(incident.deviceName)}</b>\n` +
-               `👤 Người báo cáo\n` +
-               `<b>${escapeHTML(incident.reporterName || 'Cán Bộ Kỹ Thuật')}</b>\n` +
-               `📝 Mô tả từ người dùng\n` +
-               `<i>${escapeHTML(incident.description)}</i>`;
+        if (eventType === 'accepted') {
+          text = `⚙️<b>KỸ THUẬT ĐÃ TIẾP NHẬN SỰ CỐ</b> ⚙️\n` +
+                 `🏢 Vị trí / Phòng: <b>${escapeHTML(formatRoom(incident.room))}</b>\n` +
+                 `📟 Thiết bị: <b>${escapeHTML(incident.deviceName)}</b> (${escapeHTML(incident.deviceSn || 'N/A')})\n` +
+                 `👤 Người báo cáo: <b>${escapeHTML(incident.reporterName || 'Cán bộ')}</b>\n` +
+                 `🔧 Kỹ thuật viên tiếp nhận: <b>${escapeHTML(updatedBy || 'Bộ phận Kỹ thuật DUE')}</b>\n` +
+                 `🕒 Trạng thái: <b>Đang tiến hành kiểm tra & sửa chữa</b>`;
+        } else if (eventType === 'resolved') {
+          text = `✅<b>SỰ CỐ ĐÃ ĐƯỢC KHẮC PHỤC HOÀN TẤT</b> ✅\n` +
+                 `🏢 Vị trí / Phòng: <b>${escapeHTML(formatRoom(incident.room))}</b>\n` +
+                 `📟 Thiết bị: <b>${escapeHTML(incident.deviceName)}</b> (${escapeHTML(incident.deviceSn || 'N/A')})\n` +
+                 `📝 Kết quả xử lý: <i>${escapeHTML(resolutionNotes || 'Đã khắc phục xong và thiết bị hoạt động bình thường')}</i>\n` +
+                 `👨‍🔧 Người xử lý: <b>${escapeHTML(updatedBy || 'Bộ phận Kỹ thuật DUE')}</b>\n` +
+                 `🕒 Hoàn tất lúc: ${new Date().toLocaleString('vi-VN')}`;
+        } else {
+          text = `🚨<b>BÁO CÁO SỰ CỐ THIẾT BỊ MỚI</b> 🚨\n` +
+                 `🏢 Vị trí / Phòng: <b>${escapeHTML(formatRoom(incident.room))}</b>\n` +
+                 `📟 Thiết bị cần báo lỗi: <b>${escapeHTML(incident.deviceName)}</b>\n` +
+                 `👤 Người báo cáo: <b>${escapeHTML(incident.reporterName || 'Cán Bộ')}</b>\n` +
+                 `📝 Mô tả: <i>${escapeHTML(incident.description)}</i>`;
+        }
       }
 
       const telegramUrl = `https://api.telegram.org/bot${targetToken}/sendMessage`;

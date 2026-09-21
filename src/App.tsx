@@ -597,6 +597,7 @@ export default function App() {
 
       // Send Discord Webhook Alert
       await sendDiscordAlert(newReport, 'new');
+      await sendTelegramAlert(newReport, 'new');
       await sendN8nAlert(newReport, 'accepted', 'Báo cáo sự cố mới'); // Or maybe 'created' eventType if it supported it. The backend currently doesn't check eventType, it's just forwarded.
 
     } catch (err) {
@@ -633,6 +634,29 @@ export default function App() {
       });
     } catch (err) {
       console.error('Error sending Discord alert from frontend:', err);
+    }
+  };
+
+  const sendTelegramAlert = async (incident: any, eventType: 'new' | 'accepted' | 'resolved', resolutionNotes?: string) => {
+    const token = localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN') || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8';
+    const chatId = localStorage.getItem('DUE_TELEGRAM_CHAT_ID');
+    if (!chatId) return;
+
+    try {
+      await fetch('/api/telegram/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          chatId,
+          incident,
+          eventType,
+          resolutionNotes,
+          updatedBy: currentUser?.name || 'Cán Bộ Kỹ Thuật'
+        })
+      });
+    } catch (err) {
+      console.error('Error sending Telegram alert from frontend:', err);
     }
   };
 
@@ -675,8 +699,9 @@ export default function App() {
         }
       }
 
-      // Send Discord Webhook Alert
+      // Send Discord, Telegram, n8n Webhook Alerts
       await sendDiscordAlert(inc, 'resolved', resolutionNotes);
+      await sendTelegramAlert(inc, 'resolved', resolutionNotes);
       await sendN8nAlert(inc, 'resolved', resolutionNotes);
     }
 
@@ -697,8 +722,9 @@ export default function App() {
     if (inc) {
       addToast('Đã Tiếp Nhận Sự Cố', `Sự cố của ${inc.deviceName} (${inc.deviceSn}) đã được tiếp nhận để xử lý.`, 'info', inc.deviceSn);
       
-      // Send Discord Webhook Alert
+      // Send Discord, Telegram, n8n Webhook Alerts
       await sendDiscordAlert(inc, 'accepted');
+      await sendTelegramAlert(inc, 'accepted');
       await sendN8nAlert(inc, 'accepted');
     }
 
