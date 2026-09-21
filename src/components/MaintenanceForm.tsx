@@ -184,7 +184,18 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
   );
   const [discordTesting, setDiscordTesting] = useState(false);
   const [discordTestResult, setDiscordTestResult] = useState<string | null>(null);
-  const [configTab, setConfigTab] = useState<'discord' | 'n8n' | 'device'>('discord');
+
+  // Telegram Bot (@japancsvcbot) Integration State
+  const [telegramBotToken, setTelegramBotToken] = useState<string>(
+    localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN') || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8'
+  );
+  const [telegramChatId, setTelegramChatId] = useState<string>(
+    localStorage.getItem('DUE_TELEGRAM_CHAT_ID') || ''
+  );
+  const [telegramTesting, setTelegramTesting] = useState(false);
+  const [telegramTestResult, setTelegramTestResult] = useState<string | null>(null);
+
+  const [configTab, setConfigTab] = useState<'discord' | 'telegram' | 'n8n' | 'device'>('discord');
   const [customCategory, setCustomCategory] = useState<string>('');
 
   useEffect(() => {
@@ -195,6 +206,14 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
         if (data && data.discordWebhookUrl) {
           setDiscordWebhookUrl(data.discordWebhookUrl);
           localStorage.setItem('DUE_DISCORD_WEBHOOK_URL', data.discordWebhookUrl);
+        }
+        if (data && data.telegramBotToken) {
+          setTelegramBotToken(data.telegramBotToken);
+          localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', data.telegramBotToken);
+        }
+        if (data && data.telegramChatId) {
+          setTelegramChatId(data.telegramChatId);
+          localStorage.setItem('DUE_TELEGRAM_CHAT_ID', data.telegramChatId);
         }
       }
     });
@@ -313,6 +332,40 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
       setN8nTestResult(`❌ Lỗi kết nối: ${err.message}`);
     } finally {
       setN8nTesting(false);
+    }
+  };
+
+  const handleTestTelegram = async () => {
+    if (!telegramBotToken.trim() || !telegramChatId.trim()) {
+      setTelegramTestResult('❌ Vui lòng nhập đầy đủ Bot Token và Chat ID.');
+      return;
+    }
+
+    setTelegramTesting(true);
+    setTelegramTestResult(null);
+    try {
+      localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', telegramBotToken);
+      localStorage.setItem('DUE_TELEGRAM_CHAT_ID', telegramChatId);
+
+      const res = await fetch('/api/telegram/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: telegramBotToken,
+          chatId: telegramChatId,
+          message: '🚨<b>KIỂM TRA KẾT NỐI TELEGRAM BOT (@japancsvcbot)</b>\nHệ thống Quản lý Thiết bị DUE đã kết nối thành công tới bot thông báo sự cố!'
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTelegramTestResult('✅ Đã gửi tin nhắn thử nghiệm đến Telegram bot @japancsvcbot thành công!');
+      } else {
+        setTelegramTestResult(`⚠️ Lỗi: ${data.error || 'Không thể gửi tin nhắn qua Telegram'}`);
+      }
+    } catch (err: any) {
+      setTelegramTestResult(`❌ Lỗi kết nối: ${err.message}`);
+    } finally {
+      setTelegramTesting(false);
     }
   };
 
@@ -866,8 +919,31 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
       }
     }
 
+    // 4. Trigger direct Telegram Bot (@japancsvcbot) notification if chat id configured
+    if (telegramChatId.trim()) {
+      try {
+        localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', telegramBotToken);
+        localStorage.setItem('DUE_TELEGRAM_CHAT_ID', telegramChatId);
+
+        const res = await fetch('/api/telegram/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: telegramBotToken,
+            chatId: telegramChatId,
+            incident: incidentData
+          })
+        });
+        if (res.ok) {
+          isNotified = true;
+        }
+      } catch (tgErr) {
+        console.error('Error triggering Telegram notification:', tgErr);
+      }
+    }
+
     if (isNotified) {
-      alert('Báo cáo sự cố hư hỏng đã được tạo và hệ thống đã gửi thông báo Discord thành công!');
+      alert('Báo cáo sự cố hư hỏng đã được tạo và hệ thống đã gửi thông báo thành công qua Discord/Telegram (@japancsvcbot)!');
     } else {
       alert('Báo cáo sự cố hư hỏng đã được tạo thành công!');
     }
@@ -1708,6 +1784,15 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                     </button>
                     <button
                       type="button"
+                      onClick={() => setConfigTab('telegram')}
+                      className={`px-3 py-1.5 rounded-lg font-bold transition whitespace-nowrap ${
+                        configTab === 'telegram' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      🤖 Telegram Bot (@japancsvcbot)
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setConfigTab('n8n')}
                       className={`px-3 py-1.5 rounded-lg font-bold transition whitespace-nowrap ${
                         configTab === 'n8n' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
@@ -1783,6 +1868,81 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                     {discordTestResult && (
                       <div className="text-xs font-semibold p-3 rounded-xl bg-white border border-slate-200 shadow-sm text-slate-800">
                         {discordTestResult}
+                      </div>
+                    )}
+                  </div>
+                ) : configTab === 'telegram' ? (
+                  <div className="space-y-3.5">
+                    <div className="bg-sky-50/70 text-sky-900 p-3 rounded-xl border border-sky-200 text-[11px] leading-relaxed">
+                      💡 <b>Cấu hình Telegram Bot (@japancsvcbot):</b> Nhập Bot Token và Chat ID hoặc Group ID nhận tin báo hỏng. Hệ thống sẽ gửi thông báo sự cố trực tiếp qua bot <b>@japancsvcbot</b> ngay khi có báo cáo từ cán bộ.
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-bold text-slate-700">Telegram Bot Token:</label>
+                        <input
+                          type="text"
+                          value={telegramBotToken}
+                          onChange={(e) => setTelegramBotToken(e.target.value)}
+                          placeholder="8715568190:AAEKFL-..."
+                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white text-slate-800 focus:outline-none focus:border-sky-500 font-mono shadow-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-bold text-slate-700">Telegram Chat ID / Group ID:</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={telegramChatId}
+                            onChange={(e) => setTelegramChatId(e.target.value)}
+                            placeholder="Ví dụ: -100123456789 hoặc @japancsvcbot"
+                            className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white text-slate-800 focus:outline-none focus:border-sky-500 font-mono shadow-sm"
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!telegramBotToken.trim() || !telegramChatId.trim()) {
+                                alert('Vui lòng nhập đầy đủ Bot Token và Chat ID.');
+                                return;
+                              }
+                              try {
+                                await setDoc(doc(db, 'devices', '_settings'), { 
+                                  telegramBotToken: telegramBotToken.trim(),
+                                  telegramChatId: telegramChatId.trim()
+                                }, { merge: true });
+                                localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', telegramBotToken.trim());
+                                localStorage.setItem('DUE_TELEGRAM_CHAT_ID', telegramChatId.trim());
+                                alert('Đã lưu và đồng bộ cấu hình Telegram Bot (@japancsvcbot) thành công!');
+                              } catch (err) {
+                                console.error('Error saving telegram config:', err);
+                                alert('Lỗi: Không thể lưu cấu hình lên cơ sở dữ liệu.');
+                              }
+                            }}
+                            className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 text-xs font-bold transition shadow-sm whitespace-nowrap"
+                          >
+                            Lưu
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-slate-100">
+                      <span className="text-[10px] text-slate-500">
+                        Bot đang kết nối: <strong className="text-sky-700">@japancsvcbot</strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleTestTelegram}
+                        disabled={telegramTesting || !telegramBotToken.trim() || !telegramChatId.trim()}
+                        className="rounded-xl bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                      >
+                        {telegramTesting ? 'Đang gửi...' : '🚀 Gửi thử tới @japancsvcbot'}
+                      </button>
+                    </div>
+
+                    {telegramTestResult && (
+                      <div className="text-xs font-semibold p-3 rounded-xl bg-white border border-slate-200 shadow-sm text-slate-800">
+                        {telegramTestResult}
                       </div>
                     )}
                   </div>
