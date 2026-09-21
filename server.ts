@@ -483,163 +483,7 @@ do_khan_cap: "Chưa xác định"`;
     }
   }
 
-  // Discord Webhook Sending Endpoint
-  app.post('/api/discord/send', async (req, res) => {
-    try {
-      const { webhookUrl, faultData, eventType, resolutionNotes } = req.body;
-      const targetUrl = webhookUrl || process.env.DISCORD_WEBHOOK_URL || 'https://discordapp.com/api/webhooks/1536963623295909888/GeJsvcz_wBp13avyIy_BKEq2M_brDAkDKtvbEOvRJzYxMyVVKNRvzpC55in9EYhgr7U-';
 
-      if (!targetUrl) {
-        return res.status(400).json({ error: 'Chưa cấu hình Discord Webhook URL' });
-      }
-      // Build message payload based on event type
-      let messagePayload: any = {
-        username: "Hệ thống Báo hỏng DUE",
-        avatar_url: "https://cdn-icons-png.flaticon.com/512/1046/1046365.png",
-      };
-
-      if (!eventType || eventType === 'new') {
-        const formatRoom = (rm: string) => {
-          if (!rm) return 'Không rõ phòng';
-          if (rm.toLowerCase().startsWith('phòng')) return rm;
-          return `Phòng ${rm}`;
-        };
-
-        const roleId = process.env.DISCORD_ROLE_ID || 'ID_ROLE_KY_THUAT';
-
-        messagePayload.content = `📢 <@&${roleId}> Có một báo cáo sự cố thiết bị mới!`;
-        messagePayload.embeds = [
-          {
-            title: "🚨 BÁO CÁO SỰ CỐ THIẾT BỊ MỚI",
-            description: "Thông tin chi tiết về sự cố thiết bị vừa được ghi nhận từ hệ thống mã QR.",
-            color: 16711680, // Mã màu Đỏ (Red)
-            fields: [
-              {
-                name: "🏢 Vị trí / Phòng",
-                value: `**${formatRoom(faultData.room)}**\n(Ví dụ: Phòng D305)`,
-                inline: true
-              },
-              {
-                name: "📟 Thiết bị",
-                value: `**${faultData.deviceName}**\n(Ví dụ: Máy chiếu Panasonic)`,
-                inline: true
-              },
-              {
-                name: "👤 Người báo cáo",
-                value: `${faultData.reporter}`,
-                inline: true
-              },
-              {
-                name: "📝 Mô tả từ người dùng",
-                value: `\`\`\`${faultData.description || 'Không có mô tả'}\`\`\``,
-                inline: false
-              }
-            ],
-            footer: {
-              text: "Hệ thống Báo hỏng DUE • Quản lý Thiết bị",
-              icon_url: "https://i.imgur.com/your-due-logo.png"
-            },
-            timestamp: new Date().toISOString()
-          }
-        ];
-      } else if (eventType === 'accepted') {
-        messagePayload.content = "🔧 **TIẾP NHẬN SỰ CỐ THIẾT BỊ** 🔧";
-        messagePayload.embeds = [
-          {
-            title: "Thông tin tiếp nhận",
-            color: 16753920, // Mã màu Cam (Orange)
-            fields: [
-              {
-                name: "🏢 Vị trí / Phòng",
-                value: `**${faultData.room}**`,
-                inline: true
-              },
-              {
-                name: "📟 Thiết bị lỗi",
-                value: `**${faultData.deviceName}**\n(Mã: ${faultData.sn})`,
-                inline: true
-              },
-              {
-                name: "👤 Kỹ thuật tiếp nhận",
-                value: `${faultData.reporter}`,
-                inline: true
-              },
-              {
-                name: "📝 Mô tả từ người dùng",
-                value: `${faultData.description}`,
-                inline: false
-              },
-              {
-                name: "💬 Trạng thái xử lý",
-                value: "Kỹ thuật viên đang tiến hành kiểm tra và khắc phục lỗi.",
-                inline: false
-              }
-            ],
-            footer: {
-              text: "Hệ thống Quản trị Cơ sở vật chất"
-            },
-            timestamp: new Date().toISOString()
-          }
-        ];
-      } else if (eventType === 'resolved') {
-        messagePayload.content = "✅ **ĐÃ KHẮC PHỤC XONG SỰ CỐ** ✅";
-        messagePayload.embeds = [
-          {
-            title: "Kết quả khắc phục",
-            color: 65280, // Mã màu Xanh lá (Green)
-            fields: [
-              {
-                name: "🏢 Vị trí / Phòng",
-                value: `**${faultData.room}**`,
-                inline: true
-              },
-              {
-                name: "📟 Thiết bị lỗi",
-                value: `**${faultData.deviceName}**\n(Mã: ${faultData.sn})`,
-                inline: true
-              },
-              {
-                name: "👤 Kỹ thuật thực hiện",
-                value: `${faultData.reporter}`,
-                inline: true
-              },
-              {
-                name: "📢 Phương án khắc phục",
-                value: `${resolutionNotes || 'Đã xử lý hoàn tất'}`,
-                inline: false
-              },
-              {
-                name: "💬 Trạng thái thiết bị",
-                value: "Thiết bị đã hoạt động bình thường trở lại.",
-                inline: false
-              }
-            ],
-            footer: {
-              text: "Hệ thống Quản trị Cơ sở vật chất"
-            },
-            timestamp: new Date().toISOString()
-          }
-        ];
-      }
-
-      const response = await fetch(targetUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(messagePayload)
-      });
-
-      if (response.ok) {
-        res.json({ success: true, message: "Đã gửi thông báo Discord thành công!" });
-      } else {
-        const errorText = await response.text();
-        console.error("Lỗi từ Discord Webhook:", response.status, errorText);
-        res.status(400).json({ error: `Lỗi từ Discord: ${response.status} - ${errorText}` });
-      }
-    } catch (err: any) {
-      console.error("Lỗi kết nối khi gọi Discord:", err);
-      res.status(500).json({ error: `Lỗi kết nối Discord Webhook: ${err.message}` });
-    }
-  });
 
   app.post('/api/n8n/trigger-telegram', async (req, res) => {
     try {
@@ -866,7 +710,7 @@ do_khan_cap: "Chưa xác định"`;
     }
   });
 
-  // Dedicated Webhook endpoint for Discord/n8n to update incident status
+  // Dedicated Webhook endpoint for n8n/Telegram to update incident status
   app.post('/api/incidents/update-status', async (req, res) => {
     try {
       const { id, deviceSn, status, resolutionNotes } = req.body;
@@ -910,7 +754,7 @@ do_khan_cap: "Chưa xác định"`;
             };
             if (targetStatus === 'resolved') {
               updatePayload.resolvedAt = resolvedAt;
-              updatePayload.resolutionNotes = resolutionNotes || 'Đã khắc phục hoàn tất qua Discord';
+              updatePayload.resolutionNotes = resolutionNotes || 'Đã khắc phục hoàn tất qua hệ thống';
             }
             await updateDoc(docRef, updatePayload);
             updatedCount++;
@@ -926,13 +770,13 @@ do_khan_cap: "Chưa xác định"`;
         if (id) {
           await db.update(incidents).set({
             status: targetStatus,
-            resolutionNotes: targetStatus === 'resolved' ? (resolutionNotes || 'Đã khắc phục hoàn tất qua Discord') : null,
+            resolutionNotes: targetStatus === 'resolved' ? (resolutionNotes || 'Đã khắc phục hoàn tất qua hệ thống') : null,
             resolvedAt: resolvedAt
           }).where(eq(incidents.id, id));
         } else if (deviceSn) {
           await db.update(incidents).set({
             status: targetStatus,
-            resolutionNotes: targetStatus === 'resolved' ? (resolutionNotes || 'Đã khắc phục hoàn tất qua Discord') : null,
+            resolutionNotes: targetStatus === 'resolved' ? (resolutionNotes || 'Đã khắc phục hoàn tất qua hệ thống') : null,
             resolvedAt: resolvedAt
           }).where(eq(incidents.deviceSn, deviceSn));
         }

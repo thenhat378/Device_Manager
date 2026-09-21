@@ -595,10 +595,9 @@ export default function App() {
          await updateDoc(doc(db, 'devices', dev.id), { status: 'damaged', updatedAt: new Date().toISOString() });
       }
 
-      // Send Discord Webhook Alert
-      await sendDiscordAlert(newReport, 'new');
+      // Send Telegram & n8n Alerts
       await sendTelegramAlert(newReport, 'new');
-      await sendN8nAlert(newReport, 'accepted', 'Báo cáo sự cố mới'); // Or maybe 'created' eventType if it supported it. The backend currently doesn't check eventType, it's just forwarded.
+      await sendN8nAlert(newReport, 'accepted', 'Báo cáo sự cố mới');
 
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'incidents');
@@ -610,31 +609,6 @@ export default function App() {
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
-  };
-
-  const sendDiscordAlert = async (incident: any, eventType: 'new' | 'accepted' | 'resolved', resolutionNotes?: string) => {
-    const webhookUrl = localStorage.getItem('DUE_DISCORD_WEBHOOK_URL') || 'https://discordapp.com/api/webhooks/1536963623295909888/GeJsvcz_wBp13avyIy_BKEq2M_brDAkDKtvbEOvRJzYxMyVVKNRvzpC55in9EYhgr7U-';
-
-    try {
-      await fetch('/api/discord/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          webhookUrl,
-          faultData: {
-            room: incident.room || 'Phòng học',
-            deviceName: incident.deviceName || 'Thiết bị',
-            sn: incident.deviceSn || 'Không rõ SN',
-            reporter: currentUser?.name || incident.reporterName || 'Cán bộ báo cáo',
-            description: incident.description || 'Không có mô tả chi tiết'
-          },
-          eventType,
-          resolutionNotes
-        })
-      });
-    } catch (err) {
-      console.error('Error sending Discord alert from frontend:', err);
-    }
   };
 
   const sendTelegramAlert = async (incident: any, eventType: 'new' | 'accepted' | 'resolved', resolutionNotes?: string) => {
@@ -699,8 +673,7 @@ export default function App() {
         }
       }
 
-      // Send Discord, Telegram, n8n Webhook Alerts
-      await sendDiscordAlert(inc, 'resolved', resolutionNotes);
+      // Send Telegram & n8n Alerts
       await sendTelegramAlert(inc, 'resolved', resolutionNotes);
       await sendN8nAlert(inc, 'resolved', resolutionNotes);
     }
@@ -722,8 +695,7 @@ export default function App() {
     if (inc) {
       addToast('Đã Tiếp Nhận Sự Cố', `Sự cố của ${inc.deviceName} (${inc.deviceSn}) đã được tiếp nhận để xử lý.`, 'info', inc.deviceSn);
       
-      // Send Discord, Telegram, n8n Webhook Alerts
-      await sendDiscordAlert(inc, 'accepted');
+      // Send Telegram & n8n Alerts
       await sendTelegramAlert(inc, 'accepted');
       await sendN8nAlert(inc, 'accepted');
     }

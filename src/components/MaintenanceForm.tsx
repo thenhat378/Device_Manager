@@ -171,19 +171,12 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
      }
    }, [currentUser]);
 
-  // n8n Webhook & Discord Integration State
+  // n8n Webhook & Telegram Integration State
   const [n8nWebhookUrl, setN8nWebhookUrl] = useState<string>(
     localStorage.getItem('DUE_N8N_WEBHOOK_URL') || ''
   );
   const [n8nTesting, setN8nTesting] = useState(false);
   const [n8nTestResult, setN8nTestResult] = useState<string | null>(null);
-
-  // Discord Webhook Direct Integration State
-  const [discordWebhookUrl, setDiscordWebhookUrl] = useState<string>(
-    localStorage.getItem('DUE_DISCORD_WEBHOOK_URL') || 'https://discordapp.com/api/webhooks/1536963623295909888/GeJsvcz_wBp13avyIy_BKEq2M_brDAkDKtvbEOvRJzYxMyVVKNRvzpC55in9EYhgr7U-'
-  );
-  const [discordTesting, setDiscordTesting] = useState(false);
-  const [discordTestResult, setDiscordTestResult] = useState<string | null>(null);
 
   // Telegram Bot (@japancsvcbot) Integration State
   const [telegramBotToken, setTelegramBotToken] = useState<string>(
@@ -196,7 +189,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
   const [telegramScanning, setTelegramScanning] = useState(false);
   const [telegramTestResult, setTelegramTestResult] = useState<string | null>(null);
 
-  const [configTab, setConfigTab] = useState<'discord' | 'telegram' | 'n8n' | 'device'>('discord');
+  const [configTab, setConfigTab] = useState<'telegram' | 'n8n' | 'device'>('telegram');
   const [customCategory, setCustomCategory] = useState<string>('');
 
   useEffect(() => {
@@ -204,10 +197,6 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
     const unsub = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
-        if (data && data.discordWebhookUrl) {
-          setDiscordWebhookUrl(data.discordWebhookUrl);
-          localStorage.setItem('DUE_DISCORD_WEBHOOK_URL', data.discordWebhookUrl);
-        }
         if (data && data.telegramBotToken) {
           setTelegramBotToken(data.telegramBotToken);
           localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', data.telegramBotToken);
@@ -274,44 +263,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
   const [resolvingIncidentId, setResolvingIncidentId] = useState<string | null>(null);
   const [resolutionNoteText, setResolutionNoteText] = useState('');
 
-  const handleTestDiscord = async () => {
-    if (!discordWebhookUrl.trim()) {
-      setDiscordTestResult('❌ Vui lòng nhập Discord Webhook URL.');
-      return;
-    }
 
-    setDiscordTesting(true);
-    setDiscordTestResult(null);
-    try {
-      localStorage.setItem('DUE_DISCORD_WEBHOOK_URL', discordWebhookUrl);
-
-      const res = await fetch('/api/discord/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          webhookUrl: discordWebhookUrl,
-          faultData: {
-            room: 'Phòng học thí nghiệm H002',
-            deviceName: 'Máy tính bảng Samsung Galaxy Tab A9',
-            sn: 'SS-TAB-A9-002',
-            reporter: currentUser?.name || 'Kỹ thuật viên thử nghiệm',
-            description: 'Tín hiệu kiểm tra kết nối hệ thống cảnh báo sự cố DUE qua Discord Webhook.'
-          },
-          eventType: 'new'
-        })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setDiscordTestResult('✅ Đã gửi tín hiệu kiểm tra qua Discord thành công! Hãy kiểm tra kênh Discord của bạn.');
-      } else {
-        setDiscordTestResult(`⚠️ Lỗi: ${data.error || 'Gửi thất bại'}`);
-      }
-    } catch (err: any) {
-      setDiscordTestResult(`❌ Lỗi kết nối: ${err.message}`);
-    } finally {
-      setDiscordTesting(false);
-    }
-  };
 
   const handleTestN8nWebhook = async () => {
     setN8nTesting(true);
@@ -616,7 +568,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
               1. Quét mã QR tại phòng <strong>\${selectedAdminRoom}</strong> để báo hỏng nhanh.<br/>
               2. Các loại thiết bị hỗ trợ: <strong>Máy chiếu, Dây cáp HDMI, Dây VGA, Thiết bị điện, Điều hoà, Âm thanh, Bàn ghế</strong>.<br/>
               3. Chọn thiết bị/loại thiết bị gặp sự cố, nhập mô tả và gửi báo cáo.<br/>
-              4. Bộ phận kỹ thuật sẽ nhận được thông báo tức thì qua Telegram / Discord!
+              4. Bộ phận kỹ thuật sẽ nhận được thông báo tức thì qua Telegram Bot (@japancsvcbot)!
             </div>
           </div>
           <script>
@@ -901,35 +853,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
     
     let isNotified = false;
 
-    // 2. Trigger direct Discord Webhook message
-    if (discordWebhookUrl.trim()) {
-      try {
-        localStorage.setItem('DUE_DISCORD_WEBHOOK_URL', discordWebhookUrl);
-        
-        const res = await fetch('/api/discord/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            webhookUrl: discordWebhookUrl,
-            faultData: {
-              room: incidentData.room,
-              deviceName: incidentData.deviceName,
-              sn: incidentData.deviceSn,
-              reporter: incidentData.reporterName,
-              description: incidentData.description
-            },
-            eventType: 'new'
-          })
-        });
-        if (res.ok) {
-          isNotified = true;
-        }
-      } catch (discErr) {
-        console.error('Error triggering direct Discord notification:', discErr);
-      }
-    }
-
-    // 3. Trigger n8n webhook if configured
+    // 2. Trigger n8n webhook if configured
     if (n8nWebhookUrl.trim()) {
       try {
         localStorage.setItem('DUE_N8N_WEBHOOK_URL', n8nWebhookUrl);
@@ -949,7 +873,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
       }
     }
 
-    // 4. Trigger direct Telegram Bot (@japancsvcbot) notification if chat id configured
+    // 3. Trigger direct Telegram Bot (@japancsvcbot) notification if chat id configured
     if (telegramChatId.trim()) {
       try {
         localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', telegramBotToken);
@@ -973,7 +897,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
     }
 
     if (isNotified) {
-      alert('Báo cáo sự cố hư hỏng đã được tạo và hệ thống đã gửi thông báo thành công qua Discord/Telegram (@japancsvcbot)!');
+      alert('Báo cáo sự cố hư hỏng đã được tạo và hệ thống đã gửi thông báo thành công qua Telegram Bot (@japancsvcbot)!');
     } else {
       alert('Báo cáo sự cố hư hỏng đã được tạo thành công!');
     }
@@ -1772,7 +1696,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                   Báo Cáo Sự Cố Hư Hỏng Thiết Bị Đột Xuất
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Tạo báo cáo hỏng hóc để kích hoạt thông báo Discord tới nhóm kỹ thuật viên quản lý thiết bị
+                  Tạo báo cáo hỏng hóc để kích hoạt thông báo Telegram tới nhóm kỹ thuật viên quản lý thiết bị
                 </p>
               </div>
 
@@ -1788,7 +1712,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
               )}
             </div>
 
-            {/* Discord, Webhook & Device PWA Notification Integration Dashboard Card */}
+            {/* Telegram, Webhook & Device PWA Notification Integration Dashboard Card */}
             {currentUser?.role === 'admin' && (
               <div className="rounded-2xl bg-slate-50 border border-slate-200 p-5 space-y-4 shadow-inner">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
@@ -1798,20 +1722,11 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                     </div>
                     <div>
                       <h4 className="font-bold text-slate-900 text-xs">Cấu hình Hệ thống Thông báo DUE</h4>
-                      <p className="text-[11px] text-slate-500">Nhận cảnh báo thời gian thực trên Discord, Webhook hoặc trực tiếp trên Thiết bị Di động</p>
+                      <p className="text-[11px] text-slate-500">Nhận cảnh báo thời gian thực trên Telegram, Webhook hoặc trực tiếp trên Thiết bị Di động</p>
                     </div>
                   </div>
 
                   <div className="flex bg-slate-200/80 p-0.5 rounded-xl text-[11px] overflow-x-auto max-w-full shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setConfigTab('discord')}
-                      className={`px-3 py-1.5 rounded-lg font-bold transition whitespace-nowrap ${
-                        configTab === 'discord' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      💬 Discord Webhook
-                    </button>
                     <button
                       type="button"
                       onClick={() => setConfigTab('telegram')}
@@ -1842,66 +1757,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                   </div>
                 </div>
 
-                {configTab === 'discord' ? (
-                  <div className="space-y-3.5">
-                    <div className="bg-emerald-50/60 text-emerald-800 p-3 rounded-xl border border-emerald-150 text-[11px] leading-relaxed">
-                      💡 <b>Cách kết nối nhanh:</b> Tạo một Webhook trong kênh Discord của bạn, sao chép địa chỉ Webhook URL rồi dán vào ô bên dưới. Hệ thống sẽ tự động gửi thông báo dạng <b>Embed</b> trực quan có mã màu kèm theo chẩn đoán lỗi từ <b>Gemini AI</b>.
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-slate-700">Discord Webhook URL:</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={discordWebhookUrl}
-                          onChange={(e) => setDiscordWebhookUrl(e.target.value)}
-                          placeholder="Dán mã Webhook URL của kênh Discord vào đây..."
-                          className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white text-slate-800 focus:outline-none focus:border-emerald-500 font-mono shadow-sm"
-                        />
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!discordWebhookUrl.trim()) {
-                              alert('Vui lòng nhập Discord Webhook URL hợp lệ.');
-                              return;
-                            }
-                            try {
-                              await setDoc(doc(db, 'settings', 'app_config'), { discordWebhookUrl: discordWebhookUrl.trim() }, { merge: true });
-                              localStorage.setItem('DUE_DISCORD_WEBHOOK_URL', discordWebhookUrl.trim());
-                              alert('Đã lưu và đồng bộ cấu hình Discord Webhook toàn hệ thống thành công!');
-                            } catch (err) {
-                              console.error('Error saving webhook URL:', err);
-                              alert('Lỗi: Không thể lưu cấu hình lên cơ sở dữ liệu.');
-                            }
-                          }}
-                          className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-xs font-bold transition shadow-sm whitespace-nowrap active:scale-95"
-                        >
-                          Lưu & Đồng Bộ
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-slate-100">
-                      <span className="text-[10px] text-slate-500">
-                        Tên dịch vụ: <strong className="text-slate-700">Hệ thống Báo hỏng DUE</strong>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleTestDiscord}
-                        disabled={discordTesting || !discordWebhookUrl.trim()}
-                        className="rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-                      >
-                        {discordTesting ? 'Đang kết nối...' : '🚀 Gửi thử tín hiệu Discord'}
-                      </button>
-                    </div>
-
-                    {discordTestResult && (
-                      <div className="text-xs font-semibold p-3 rounded-xl bg-white border border-slate-200 shadow-sm text-slate-800">
-                        {discordTestResult}
-                      </div>
-                    )}
-                  </div>
-                ) : configTab === 'telegram' ? (
+                {configTab === 'telegram' ? (
                   <div className="space-y-3.5">
                     <div className="bg-sky-50/70 text-sky-900 p-3 rounded-xl border border-sky-200 text-[11px] leading-relaxed space-y-1">
                       <p>💡 <b>Cấu hình Telegram Bot (@japancsvcbot):</b></p>
@@ -2163,7 +2019,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
 
                 <div className="rounded-xl bg-rose-50/50 p-3 border border-rose-100 flex items-center gap-2 text-rose-900 text-[11px] leading-relaxed">
                   <Zap className="h-4 w-4 text-rose-600 shrink-0 animate-pulse" />
-                  <span>Cảnh báo sự cố này sẽ được chuyển ngay đến bộ phận kỹ thuật qua Discord Webhook!</span>
+                  <span>Cảnh báo sự cố này sẽ được chuyển ngay đến bộ phận kỹ thuật qua Telegram Bot (@japancsvcbot)!</span>
                 </div>
 
                 <button
@@ -2318,7 +2174,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
 
                 <div className="rounded-xl bg-amber-50 p-3 border border-amber-150 flex items-center gap-2 text-amber-900 text-[11px] leading-relaxed">
                   <Zap className="h-4 w-4 text-amber-600 shrink-0 animate-pulse" />
-                  <span>Báo cáo sự cố thiết bị phòng học sẽ được gửi thông báo tức thì qua webhook đến bộ phận kỹ thuật (Tami OA / Discord / Telegram)!</span>
+                  <span>Báo cáo sự cố thiết bị phòng học sẽ được gửi thông báo tức thì đến bộ phận kỹ thuật qua Telegram Bot (@japancsvcbot)!</span>
                 </div>
 
                 <button
