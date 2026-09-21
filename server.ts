@@ -555,6 +555,37 @@ do_khan_cap: "Chưa xác định"`;
       .replace(/>/g, '&gt;');
   }
 
+  // Helper to format Telegram date time: HH:mm:ss D/M/YYYY
+  function formatTelegramDateTime(dateInput?: string | Date) {
+    const d = dateInput ? new Date(dateInput) : new Date();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const seconds = String(d.getSeconds()).padStart(2, '0');
+    const day = d.getDate();
+    const month = d.getMonth() + 1;
+    const year = d.getFullYear();
+    return `${hours}:${minutes}:${seconds} ${day}/${month}/${year}`;
+  }
+
+  // Helper to format severity as in image (⚪ THẤP, 🟡 TRUNG BÌNH, 🟠 CAO, 🔴 KHẨN CẤP)
+  function formatSeverityBadge(sev?: string) {
+    const s = (sev || '').toLowerCase();
+    if (s === 'urgent' || s.includes('khẩn')) return '🔴 KHẨN CẤP';
+    if (s === 'high' || s.includes('cao')) return '🟠 CAO';
+    if (s === 'medium' || s.includes('trung')) return '🟡 TRUNG BÌNH';
+    return '⚪ THẤP';
+  }
+
+  // Helper to format location
+  function formatTelegramLocation(room?: string, faculty?: string) {
+    let r = (room || 'Không rõ phòng').trim();
+    if (!r.toLowerCase().startsWith('phòng') && !r.toLowerCase().startsWith('hội trường') && !r.toLowerCase().startsWith('khu')) {
+      r = `Phòng ${r}`;
+    }
+    const f = faculty ? faculty.trim() : 'Phòng Tổ chức - Hành chính';
+    return `${r} - ${f}`;
+  }
+
   // Telegram Webhook Handler (Incoming Messages & Button Callbacks)
   app.post('/api/telegram/webhook', async (req, res) => {
     try {
@@ -826,16 +857,17 @@ do_khan_cap: "Chưa xác định"`;
             console.error('Error saving incident to Cloud SQL from webhook:', sqlErr);
           }
 
-          // 3. Send Incident Notification with Action Buttons
+          // 3. Send Incident Notification with Action Buttons matching exact user template
           const ticketMsg = 
-            `🚨 <b>PHIẾU BÁO SỰ CỐ GIẢNG ĐƯỜNG MỚI</b> 🚨\n\n` +
-            `📍 <b>Vị trí:</b> ${escapeHTML(finalRoom)}\n` +
-            `📟 <b>Thiết bị:</b> ${escapeHTML(finalDevice)}\n` +
-            `📝 <b>Nội dung:</b> <i>${escapeHTML(text)}</i>\n` +
-            `👤 <b>Người báo:</b> ${escapeHTML(finalReporter)}\n` +
-            `🕒 <b>Thời gian:</b> ${new Date().toLocaleString('vi-VN')}\n` +
-            `📌 <b>Mã phiếu:</b> <code>${incidentId}</code>\n\n` +
-            `💡 <i>Kỹ thuật viên vui lòng bấm nút bên dưới để nhận việc và cập nhật trạng thái:</i>`;
+            `🚨 <b>BÁO CÁO SỰ CỐ THIẾT BỊ MỚI</b> 🚨\n\n` +
+            `💻 <b>Thiết bị:</b> ${escapeHTML(finalDevice)} (SN: ${escapeHTML(`SN-${incidentId}`)})\n` +
+            `📍 <b>Vị trí:</b> ${escapeHTML(formatTelegramLocation(finalRoom, 'Phòng Tổ chức - Hành chính'))}\n` +
+            `⚠️ <b>Mức độ:</b> ${formatSeverityBadge(lower.includes('khẩn') || lower.includes('cháy') ? 'urgent' : (lower.includes('cao') ? 'high' : 'low'))}\n` +
+            `👤 <b>Người báo cáo:</b> ${escapeHTML(finalReporter || 'Cán Bộ Khoa / Giảng Đường')}\n` +
+            `⏰ <b>Thời gian:</b> ${formatTelegramDateTime(reportedTime)}\n\n` +
+            `📝 <b>Mô tả chi tiết sự cố:</b>\n` +
+            `<i>${escapeHTML(text)}</i>\n\n` +
+            `💻 <i>Hệ thống Quản lý Thiết bị DUE</i>`;
 
           await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
             method: 'POST',
@@ -910,21 +942,24 @@ do_khan_cap: "Chưa xác định"`;
       let replyMarkup: any = undefined;
 
       if (incident) {
-        const formatRoom = (rm: string) => {
-          if (!rm) return 'Không rõ phòng';
-          if (rm.toLowerCase().startsWith('phòng')) return rm;
-          return `Phòng ${rm}`;
-        };
         const incidentId = incident.id || incident.deviceSn || `INC-${Date.now().toString().slice(-6)}`;
+        const devName = incident.deviceName || 'Thiết bị giảng đường';
+        const devSn = incident.deviceSn ? ` (SN: ${escapeHTML(incident.deviceSn)})` : '';
+        const loc = formatTelegramLocation(incident.room, incident.faculty);
+        const reporter = incident.reporterName || 'Cán Bộ Khoa / Giảng Đường';
+        const sevBadge = formatSeverityBadge(incident.severity);
+        const timeStr = formatTelegramDateTime(incident.reportedAt || incident.createdAt);
         
         if (eventType === 'accepted') {
-          text = `⚙️ <b>KỸ THUẬT ĐÃ TIẾP NHẬN SỰ CỐ</b> ⚙️\n\n` +
-                 `🏢 <b>Vị trí:</b> ${escapeHTML(formatRoom(incident.room))}\n` +
-                 `📟 <b>Thiết bị:</b> ${escapeHTML(incident.deviceName)} (${escapeHTML(incident.deviceSn || 'N/A')})\n` +
-                 `👤 <b>Người báo cáo:</b> ${escapeHTML(incident.reporterName || 'Cán bộ')}\n` +
-                 `🔧 <b>Kỹ thuật viên tiếp nhận:</b> <b>${escapeHTML(updatedBy || 'Bộ phận Kỹ thuật DUE')}</b>\n` +
-                 `🕒 <b>Thời gian:</b> ${new Date().toLocaleString('vi-VN')}\n` +
-                 `Trạng thái: 🟡 <b>Đang tiến hành kiểm tra & sửa chữa</b>`;
+          text = `⚙️ <b>TIẾP NHẬN XỬ LÝ SỰ CỐ</b> ⚙️\n\n` +
+                 `💻 <b>Thiết bị:</b> ${escapeHTML(devName)}${devSn}\n` +
+                 `📍 <b>Vị trí:</b> ${escapeHTML(loc)}\n` +
+                 `⚠️ <b>Mức độ:</b> ${sevBadge}\n` +
+                 `👤 <b>Người báo cáo:</b> ${escapeHTML(reporter)}\n` +
+                 `👨‍🔧 <b>Kỹ thuật viên tiếp nhận:</b> <b>${escapeHTML(updatedBy || 'Bộ phận Kỹ thuật DUE')}</b>\n` +
+                 `⏰ <b>Thời gian:</b> ${timeStr}\n\n` +
+                 `⚠️ <b>Trạng thái:</b> 🟡 <i>Đang kiểm tra & sửa chữa</i>\n\n` +
+                 `💻 <i>Hệ thống Quản lý Thiết bị DUE</i>`;
 
           replyMarkup = {
             inline_keyboard: [
@@ -935,20 +970,26 @@ do_khan_cap: "Chưa xác định"`;
           };
         } else if (eventType === 'resolved') {
           text = `✅ <b>SỰ CỐ ĐÃ ĐƯỢC KHẮC PHỤC HOÀN TẤT</b> ✅\n\n` +
-                 `🏢 <b>Vị trí:</b> ${escapeHTML(formatRoom(incident.room))}\n` +
-                 `📟 <b>Thiết bị:</b> ${escapeHTML(incident.deviceName)} (${escapeHTML(incident.deviceSn || 'N/A')})\n` +
-                 `📝 <b>Kết quả xử lý:</b> <i>${escapeHTML(resolutionNotes || 'Đã khắc phục xong và thiết bị hoạt động bình thường')}</i>\n` +
+                 `💻 <b>Thiết bị:</b> ${escapeHTML(devName)}${devSn}\n` +
+                 `📍 <b>Vị trí:</b> ${escapeHTML(loc)}\n` +
+                 `👤 <b>Người báo cáo:</b> ${escapeHTML(reporter)}\n` +
                  `👨‍🔧 <b>Người xử lý:</b> <b>${escapeHTML(updatedBy || 'Bộ phận Kỹ thuật DUE')}</b>\n` +
-                 `🕒 <b>Hoàn tất lúc:</b> ${new Date().toLocaleString('vi-VN')}\n` +
-                 `Trạng thái: 🟢 <b>Hoạt động bình thường</b>`;
+                 `⏰ <b>Thời gian:</b> ${formatTelegramDateTime()}\n\n` +
+                 `📝 <b>Kết quả xử lý:</b>\n` +
+                 `<i>${escapeHTML(resolutionNotes || 'Đã khắc phục xong và thiết bị hoạt động bình thường')}</i>\n\n` +
+                 `⚠️ <b>Trạng thái:</b> 🟢 <b>Đã xử lý thành công (Hoạt động bình thường)</b>\n\n` +
+                 `💻 <i>Hệ thống Quản lý Thiết bị DUE</i>`;
         } else {
+          // New Incident Notification - EXACT FORMAT MATCHING USER IMAGE
           text = `🚨 <b>BÁO CÁO SỰ CỐ THIẾT BỊ MỚI</b> 🚨\n\n` +
-                 `🏢 <b>Vị trí:</b> ${escapeHTML(formatRoom(incident.room))}\n` +
-                 `📟 <b>Thiết bị:</b> ${escapeHTML(incident.deviceName)} (${escapeHTML(incident.deviceSn || 'N/A')})\n` +
-                 `👤 <b>Người báo cáo:</b> ${escapeHTML(incident.reporterName || 'Cán Bộ')}\n` +
-                 `📝 <b>Nội dung sự cố:</b> <i>${escapeHTML(incident.description)}</i>\n` +
-                 `🕒 <b>Thời gian:</b> ${new Date().toLocaleString('vi-VN')}\n` +
-                 `📌 <b>Mã phiếu:</b> <code>${incidentId}</code>`;
+                 `💻 <b>Thiết bị:</b> ${escapeHTML(devName)}${devSn}\n` +
+                 `📍 <b>Vị trí:</b> ${escapeHTML(loc)}\n` +
+                 `⚠️ <b>Mức độ:</b> ${sevBadge}\n` +
+                 `👤 <b>Người báo cáo:</b> ${escapeHTML(reporter)}\n` +
+                 `⏰ <b>Thời gian:</b> ${timeStr}\n\n` +
+                 `📝 <b>Mô tả chi tiết sự cố:</b>\n` +
+                 `<i>${escapeHTML(incident.description || 'Không có mô tả chi tiết')}</i>\n\n` +
+                 `💻 <i>Hệ thống Quản lý Thiết bị DUE</i>`;
 
           replyMarkup = {
             inline_keyboard: [

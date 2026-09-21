@@ -665,7 +665,7 @@ export default function App() {
         if (resData.noChatId || !chatId) {
           addToast(
             '⚠️ Chưa Kết Nối Telegram Bot',
-            'Sự cố đã được lưu vào hệ thống nhưng chưa thể gửi tới Telegram do chưa có Chat ID! Nhấn vào đây để kết nối bot @japancsvcbot.',
+            'Sự cố đã được lưu vào hệ thống nhưng chưa thể gửi tới Telegram do chưa có Chat ID! Nhấn vào đây để kết nối bot @hotrogiangday_bot.',
             'warning',
             incident?.deviceSn,
             () => setIsTelegramModalOpen(true)
@@ -683,7 +683,7 @@ export default function App() {
       } else {
         addToast(
           '🚀 Đã Phát Tin Tới Telegram',
-          `Cảnh báo sự cố đã gửi tới bot @japancsvcbot thành công (Chat ID: ${resData.sentToChatId || chatId})!`,
+          `Cảnh báo sự cố đã gửi tới bot @hotrogiangday_bot thành công (Chat ID: ${resData.sentToChatId || chatId})!`,
           'success',
           incident?.deviceSn
         );

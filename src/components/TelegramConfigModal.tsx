@@ -184,11 +184,13 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
           chatId: targetChatId,
           incident: {
             id: `TEST-${Date.now().toString().slice(-4)}`,
-            room: 'Phòng D305',
-            deviceName: 'Máy chiếu giảng đường & Cáp HDMI',
-            deviceSn: 'SN-TEST-DUE',
-            reporterName: 'Thử nghiệm hệ thống',
-            description: 'Kiểm tra thông báo sự cố kèm nút bấm tương tác [Tiếp nhận] & [Khắc phục xong].'
+            room: 'Phòng D105',
+            faculty: 'Phòng Tổ chức - Hành chính',
+            deviceName: 'Máy chiếu Viewsonic PA503W',
+            deviceSn: 'V0T241201123',
+            severity: 'low',
+            reporterName: 'Cán Bộ Khoa / Giảng Đường',
+            description: 'Không kết nối được'
           },
           eventType: 'new'
         })
