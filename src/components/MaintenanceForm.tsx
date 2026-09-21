@@ -1970,6 +1970,163 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                   GỬI BÁO CÁO KHẨN
                 </button>
               </form>
+            ) : incidentForm.deviceId === 'custom' ? (
+              /* --- KHUNG BÁO CÁO THIẾT BỊ PHÒNG HỌC (CÁN BỘ KHOA/GIẢNG ĐƯỜNG) --- */
+              <form onSubmit={handleIncidentSubmit} className="space-y-4 animate-fade-in text-left">
+                <div className="bg-amber-50/80 border border-amber-200 p-4.5 rounded-xl space-y-2 shadow-sm text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                      🏫 Báo hỏng thiết bị phòng học / thiết bị khác
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIncidentForm(prev => ({ ...prev, deviceId: '', deviceSn: '', deviceName: '' }));
+                        setScannedRoom(null);
+                      }}
+                      className="text-[11px] text-rose-600 hover:text-rose-700 font-bold transition hover:underline"
+                    >
+                      Quay lại quét QR
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-600">
+                    Dành cho Cán bộ Khoa / Giảng đường khai báo nhanh thiết bị phòng học gặp sự cố chưa có sẵn trong danh sách.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold text-slate-600">📍 Phòng học / Phòng Lab *:</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ví dụ: D305, A101, Phòng máy tính..."
+                      value={incidentForm.room}
+                      onChange={(e) => setIncidentForm(prev => ({ ...prev, room: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs bg-white text-slate-800 font-semibold shadow-sm focus:outline-none focus:border-rose-500 transition"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold text-slate-600">🏫 Khoa / Bộ môn:</label>
+                    <input
+                      type="text"
+                      placeholder="Ví dụ: Khoa CNTT, Cơ khí, Ngoại ngữ..."
+                      value={incidentForm.faculty}
+                      onChange={(e) => setIncidentForm(prev => ({ ...prev, faculty: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs bg-white text-slate-800 font-semibold shadow-sm focus:outline-none focus:border-rose-500 transition"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold text-slate-600">📟 Loại thiết bị phòng học *:</label>
+                    <select
+                      required
+                      value={customCategory}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCustomCategory(val);
+                        if (val !== 'Khác') {
+                          setIncidentForm(prev => ({ ...prev, deviceName: val }));
+                        } else {
+                          setIncidentForm(prev => ({ ...prev, deviceName: '' }));
+                        }
+                      }}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs bg-white text-slate-800 shadow-sm cursor-pointer focus:outline-none focus:border-rose-500 transition font-semibold"
+                    >
+                      <option value="">-- Chọn loại thiết bị phòng học --</option>
+                      <option value="Máy chiếu (Projector)">Máy chiếu (Projector)</option>
+                      <option value="Điều hòa nhiệt độ">Điều hòa nhiệt độ</option>
+                      <option value="Micro không dây">Micro không dây</option>
+                      <option value="Hệ thống Âm thanh (Amply/Loa)">Hệ thống Âm thanh (Amply/Loa)</option>
+                      <option value="Tivi / Màn hình lớn">Tivi / Màn hình lớn</option>
+                      <option value="Bảng tương tác thông minh">Bảng tương tác thông minh</option>
+                      <option value="Máy tính giảng viên (PC)">Máy tính giảng viên (PC)</option>
+                      <option value="Thiết bị Mạng / Wifi">Thiết bị Mạng / Wifi</option>
+                      <option value="Hệ thống Điện / Quạt / Đèn">Hệ thống Điện / Quạt / Đèn</option>
+                      <option value="Khác">Khác (Tự nhập tên thiết bị...)</option>
+                    </select>
+
+                    {customCategory === 'Khác' && (
+                      <input
+                        type="text"
+                        required
+                        placeholder="Nhập tên thiết bị khác..."
+                        value={incidentForm.deviceName}
+                        onChange={(e) => setIncidentForm(prev => ({ ...prev, deviceName: e.target.value }))}
+                        className="w-full mt-2 rounded-lg border border-slate-300 px-3 py-1.5 text-xs bg-white text-slate-800 font-semibold shadow-sm focus:outline-none focus:border-rose-500 transition animate-fade-in"
+                      />
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold text-slate-600">🔑 Số sê-ri SN (Nếu có):</label>
+                    <input
+                      type="text"
+                      placeholder="Nhập mã SN thiết bị..."
+                      value={incidentForm.deviceSn}
+                      onChange={(e) => setIncidentForm(prev => ({ ...prev, deviceSn: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs bg-white text-slate-800 font-mono shadow-sm focus:outline-none focus:border-rose-500 transition"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold text-slate-600">👤 Người báo cáo:</label>
+                    <input
+                      type="text"
+                      required
+                      disabled={currentUser?.role === 'staff'}
+                      value={incidentForm.reporterName}
+                      onChange={(e) => setIncidentForm(prev => ({ ...prev, reporterName: e.target.value }))}
+                      placeholder="Nhập tên người báo..."
+                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs bg-slate-50 disabled:opacity-75 disabled:cursor-not-allowed font-semibold text-slate-700 shadow-sm focus:outline-none focus:border-rose-500 transition"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold text-slate-600">⚠️ Mức độ khẩn cấp:</label>
+                    <select
+                      value={incidentForm.severity}
+                      onChange={(e) => setIncidentForm(prev => ({ ...prev, severity: e.target.value as any }))}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs bg-white text-slate-800 shadow-sm cursor-pointer focus:outline-none focus:border-rose-500 transition font-medium"
+                    >
+                      <option value="low">🟢 Thấp (thiết bị vẫn tạm dùng được)</option>
+                      <option value="medium">🟡 Trung bình (cần sửa trong 1-2 ngày)</option>
+                      <option value="high">🔴 Cao / Gấp (ảnh hưởng việc giảng dạy)</option>
+                      <option value="urgent">🚨 Khẩn cấp (ngừng lớp học)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label htmlFor="txtCustomDescription" className="block text-xs font-bold text-slate-700">Mô tả chi tiết sự cố phòng học *</label>
+                  <textarea
+                    id="txtCustomDescription"
+                    required
+                    rows={3}
+                    value={incidentForm.description}
+                    onChange={(e) => setIncidentForm(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="Ví dụ: Máy chiếu không lên hình tại phòng D305, điều hòa chảy nước, micro bị hú rè..."
+                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500 shadow-sm placeholder-slate-400 leading-relaxed text-slate-800 transition"
+                  />
+                </div>
+
+                <div className="rounded-xl bg-amber-50 p-3 border border-amber-150 flex items-center gap-2 text-amber-900 text-[11px] leading-relaxed">
+                  <Zap className="h-4 w-4 text-amber-600 shrink-0 animate-pulse" />
+                  <span>Báo cáo sự cố thiết bị phòng học sẽ được gửi thông báo tức thì qua webhook đến bộ phận kỹ thuật (Tami OA / Discord / Telegram)!</span>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full rounded-xl bg-[#0056b3] hover:bg-[#004085] py-3 text-xs font-bold text-white transition-all shadow-md hover:shadow-indigo-100 active:scale-[0.98] uppercase tracking-wider"
+                >
+                  GỬI BÁO CÁO SỰ CỐ PHÒNG HỌC
+                </button>
+              </form>
             ) : (
               /* --- TRẠNG THÁI CHỜ QUÉT QR HOẶC CHỌN THỦ CÔNG --- */
               <div id="errorState" className="bg-white border border-slate-200 rounded-2xl p-6.5 text-center space-y-4 shadow-sm animate-fade-in">
@@ -2046,10 +2203,30 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowManualSelect(true)}
-                        className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold underline transition-all"
+                        className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold underline transition-all block mx-auto"
                       >
                         🔍 Hoặc tìm kiếm & chọn thiết bị thủ công từ danh sách
                       </button>
+
+                      <div className="pt-2 border-t border-slate-100">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIncidentForm(prev => ({
+                              ...prev,
+                              deviceId: 'custom',
+                              room: '',
+                              deviceName: '',
+                              deviceSn: '',
+                              faculty: ''
+                            }));
+                            setCustomCategory('');
+                          }}
+                          className="w-full flex items-center justify-center gap-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 px-4 py-2.5 text-xs font-bold text-amber-900 transition shadow-sm"
+                        >
+                          🏫 Báo hỏng thiết bị phòng học (Cán bộ Khoa/Giảng đường)
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
