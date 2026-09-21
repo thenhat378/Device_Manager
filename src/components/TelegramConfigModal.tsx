@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Send, Bot, CheckCircle2, AlertCircle, RefreshCw, X, ExternalLink, MessageSquare, Check, Radio } from 'lucide-react';
+import { Send, Bot, CheckCircle2, AlertCircle, RefreshCw, X, ExternalLink, MessageSquare, Check, Radio, Globe, Zap } from 'lucide-react';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase.ts';
+
+const DEFAULT_BOT_TOKEN = '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI';
+const BOT_USERNAME = 'hotrogiangday_bot';
 
 interface TelegramConfigModalProps {
   isOpen: boolean;
@@ -18,23 +21,68 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
   currentBotToken,
   onSaved
 }) => {
-  const [botToken, setBotToken] = useState(currentBotToken || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8');
+  const [botToken, setBotToken] = useState(currentBotToken || DEFAULT_BOT_TOKEN);
   const [chatId, setChatId] = useState(currentChatId || '');
   const [scanning, setScanning] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [settingWebhook, setSettingWebhook] = useState(false);
   const [resettingWebhook, setResettingWebhook] = useState(false);
+  const [webhookInfo, setWebhookInfo] = useState<any>(null);
   const [detectedChats, setDetectedChats] = useState<Array<{ id: string; name: string; type: string; username?: string }>>([]);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setChatId(currentChatId || localStorage.getItem('DUE_TELEGRAM_CHAT_ID') || '');
-      setBotToken(currentBotToken || localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN') || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8');
+      setBotToken(currentBotToken || localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN') || DEFAULT_BOT_TOKEN);
       setStatusMessage(null);
+      fetchWebhookInfo();
     }
   }, [isOpen, currentChatId, currentBotToken]);
 
+  const fetchWebhookInfo = async () => {
+    try {
+      const res = await fetch('/api/telegram/webhook-info');
+      const data = await res.json();
+      if (res.ok && data.info) {
+        setWebhookInfo(data.info);
+      }
+    } catch (e) {}
+  };
+
   if (!isOpen) return null;
+
+  const handleSetWebhook = async () => {
+    setSettingWebhook(true);
+    setStatusMessage(null);
+    try {
+      const res = await fetch('/api/telegram/set-webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: botToken.trim() })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setStatusMessage({
+          type: 'success',
+          text: `🎉 Đã kích hoạt Webhook thành công (${data.webhookUrl})! Bot @${BOT_USERNAME} hiện đã sẵn sàng nhận tin nhắn và nút bấm tương tác 2 chiều.`
+        });
+        fetchWebhookInfo();
+      } else {
+        setStatusMessage({
+          type: 'error',
+          text: `Lỗi kích hoạt Webhook: ${data.error || 'Không thể thiết lập'}`
+        });
+      }
+    } catch (err: any) {
+      setStatusMessage({
+        type: 'error',
+        text: `Lỗi kết nối máy chủ: ${err.message}`
+      });
+    } finally {
+      setSettingWebhook(false);
+    }
+  };
 
   const handleScanChats = async () => {
     if (!botToken.trim()) {
@@ -64,7 +112,7 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
       } else {
         setStatusMessage({
           type: 'info',
-          text: 'Chưa thấy tin nhắn mới từ bạn. Hãy mở Telegram, tìm bot @japancsvcbot rồi bấm START (hoặc gửi tin nhắn bất kỳ), sau đó bấm "Quét Lại"!'
+          text: `Chưa thấy tin nhắn mới từ bạn. Hãy mở Telegram, tìm bot @${BOT_USERNAME} rồi bấm START (hoặc gửi tin nhắn bất kỳ), sau đó bấm "Quét Lại"!`
         });
       }
     } catch (err: any) {
@@ -107,7 +155,7 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
 
       setStatusMessage({
         type: 'success',
-        text: `✅ Đã lưu Chat ID [${targetChatId}] thành công! Tất cả báo cáo sự cố từ giảng đường sẽ được phát tức thì tới Telegram này.`
+        text: `✅ Đã lưu Chat ID [${targetChatId}] thành công! Tất cả báo cáo sự cố từ giảng đường sẽ được phát tức thì tới Telegram bot @${BOT_USERNAME}.`
       });
     } catch (err: any) {
       setStatusMessage({
@@ -134,11 +182,15 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
         body: JSON.stringify({
           token: botToken.trim(),
           chatId: targetChatId,
-          message: `🚨 <b>KIỂM TRA THÔNG BÁO TELEGRAM BOT (@japancsvcbot)</b>\n\n` +
-                   `🎓 <b>Trường Đại học Kinh tế - ĐH Đà Nẵng (DUE)</b>\n` +
-                   `🏢 Hệ thống Quản lý Cơ sở vật chất & Thiết bị Giảng đường.\n` +
-                   `✅ Kết nối Telegram hoạt động chuẩn xác! Mọi sự cố thiết bị báo từ giảng đường sẽ xuất hiện tại đây.\n\n` +
-                   `🕒 Thời gian: ${new Date().toLocaleString('vi-VN')}`
+          incident: {
+            id: `TEST-${Date.now().toString().slice(-4)}`,
+            room: 'Phòng D305',
+            deviceName: 'Máy chiếu giảng đường & Cáp HDMI',
+            deviceSn: 'SN-TEST-DUE',
+            reporterName: 'Thử nghiệm hệ thống',
+            description: 'Kiểm tra thông báo sự cố kèm nút bấm tương tác [Tiếp nhận] & [Khắc phục xong].'
+          },
+          eventType: 'new'
         })
       });
 
@@ -146,7 +198,7 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
       if (res.ok) {
         setStatusMessage({
           type: 'success',
-          text: `🎉 Gửi thử thành công! Mở Telegram để kiểm tra tin nhắn vừa nhận được từ bot @japancsvcbot.`
+          text: `🎉 Gửi thử thành công! Mở Telegram để kiểm tra tin nhắn và các nút bấm tương tác vừa nhận được từ bot @${BOT_USERNAME}.`
         });
       } else {
         setStatusMessage({
@@ -177,8 +229,9 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
       if (res.ok) {
         setStatusMessage({
           type: 'success',
-          text: 'Đã giải phóng và reset kết nối Telegram Bot. Bây giờ bạn có thể bấm "Quét Chat ID Tự Động"!'
+          text: 'Đã giải phóng kết nối Telegram Bot. Bây giờ bạn có thể quét Chat ID hoặc cài đặt lại Webhook!'
         });
+        fetchWebhookInfo();
       } else {
         setStatusMessage({ type: 'error', text: data.error || 'Lỗi khi reset bot' });
       }
@@ -200,12 +253,12 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-base flex items-center gap-2">
-                Cấu Hình Telegram Bot Thông Báo Sự Cố
+                Cấu Hình Telegram Bot (@{BOT_USERNAME})
                 <span className="text-[10px] uppercase font-semibold tracking-wider bg-sky-400/30 text-sky-100 px-2 py-0.5 rounded-full border border-sky-300/30">
-                  @japancsvcbot
+                  Webhook 2 Chiều
                 </span>
               </h3>
-              <p className="text-xs text-sky-100">Nhận ngay cảnh báo khi cán bộ giảng viên báo hỏng thiết bị</p>
+              <p className="text-xs text-sky-100">Hỗ trợ giảng dạy, xử lý sự cố & tiếp nhận trực tiếp qua Telegram</p>
             </div>
           </div>
           <button
@@ -230,14 +283,62 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
               <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             )}
             <div className="flex-1">
-              <div className="font-bold text-[13px]">
-                {chatId ? `Đang kết nối: Chat ID ${chatId}` : 'Chưa cấu hình Chat ID Telegram!'}
+              <div className="font-bold text-[13px] flex items-center justify-between">
+                <span>{chatId ? `Đang kết nối: Chat ID ${chatId}` : 'Chưa cấu hình Chat ID Telegram!'}</span>
+                {webhookInfo?.url && (
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-semibold">
+                    Webhook Hoạt Động
+                  </span>
+                )}
               </div>
               <p className="text-[11px] mt-0.5 opacity-90">
                 {chatId 
-                  ? 'Hệ thống đã sẵn sàng bắn thông báo đến tài khoản hoặc nhóm Telegram này mỗi khi có sự cố mới.' 
-                  : 'Nếu chưa có Chat ID, hệ thống chỉ lưu sự cố nội bộ mà không thể phát tin nhắn tới Telegram của kỹ thuật viên.'}
+                  ? `Hệ thống đã kết nối với bot @${BOT_USERNAME}. Khi có sự cố mới từ giảng đường, thông báo sẽ gửi kèm nút [Tiếp Nhận] và [Xử Lý Xong].` 
+                  : 'Nếu chưa có Chat ID, hãy bấm START với bot hoặc quét Chat ID tự động để kết nối.'}
               </p>
+            </div>
+          </div>
+
+          {/* Webhook Controller Card */}
+          <div className="bg-slate-900 text-slate-200 p-4 rounded-xl border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-sky-400" />
+                <span className="font-bold text-white text-xs">Cơ Chế Webhook 2 Chiều</span>
+              </div>
+              {webhookInfo?.url ? (
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-md font-mono">
+                  URL: /api/telegram/webhook
+                </span>
+              ) : (
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-md">
+                  Chưa cài đặt Webhook
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Webhook cho phép bot <b>@{BOT_USERNAME}</b> tự động nhận lệnh báo hỏng trực tiếp từ tin nhắn của Giảng viên và xử lý nút bấm <i>[Tiếp nhận / Hoàn tất]</i> tức thì.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleSetWebhook}
+                disabled={settingWebhook}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs transition disabled:opacity-50"
+              >
+                <Zap className={`w-3.5 h-3.5 ${settingWebhook ? 'animate-spin' : ''}`} />
+                {settingWebhook ? 'Đang kích hoạt...' : '⚡ Kích Hoạt Webhook Tự Động'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleResetWebhook}
+                disabled={resettingWebhook}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition border border-slate-700"
+              >
+                <RefreshCw className={`w-3 h-3 ${resettingWebhook ? 'animate-spin text-sky-400' : ''}`} />
+                Reset Webhook
+              </button>
             </div>
           </div>
 
@@ -255,13 +356,13 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
                   <span className="font-semibold text-slate-700">Mở Bot Telegram & Bấm Start:</span>
                   <div className="mt-1 flex items-center gap-2">
                     <a 
-                      href="https://t.me/japancsvcbot" 
+                      href={`https://t.me/${BOT_USERNAME}`} 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-semibold text-[11px] shadow-xs transition"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
-                      Mở bot @japancsvcbot trên Telegram
+                      Mở bot @{BOT_USERNAME} trên Telegram
                     </a>
                     <span className="text-[11px] text-slate-500">(hoặc thêm bot vào nhóm kỹ thuật của bạn)</span>
                   </div>
@@ -290,17 +391,6 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
             >
               <RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} />
               {scanning ? 'Đang dò tin nhắn...' : '🔍 Quét Chat ID Tự Động'}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleResetWebhook}
-              disabled={resettingWebhook}
-              title="Giải phóng kết nối bot nếu bị xung đột"
-              className="flex items-center gap-1 px-3 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium transition text-[11px]"
-            >
-              <RefreshCw className={`w-3 h-3 ${resettingWebhook ? 'animate-spin text-sky-600' : ''}`} />
-              Reset Bot
             </button>
           </div>
 
@@ -359,7 +449,7 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Bot Token (Mặc định @japancsvcbot):</label>
+              <label className="block font-bold text-slate-700 mb-1">Bot Token (Mặc định @{BOT_USERNAME}):</label>
               <input
                 type="text"
                 value={botToken}

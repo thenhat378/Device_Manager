@@ -430,6 +430,9 @@ do_khan_cap: "Chưa xác định"`;
 
 
 
+  const DEFAULT_TELEGRAM_BOT_TOKEN = '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI';
+  const DEFAULT_TELEGRAM_BOT_USERNAME = 'hotrogiangday_bot';
+
   // Helper to read Telegram configuration from Firestore database
   async function getTelegramConfigFromDb(): Promise<{ telegramBotToken?: string; telegramChatId?: string; telegramGroupName?: string } | null> {
     try {
@@ -450,9 +453,10 @@ do_khan_cap: "Chưa xác định"`;
     try {
       const dbConfig = await getTelegramConfigFromDb();
       res.json({
-        token: dbConfig?.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8',
+        token: dbConfig?.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN,
         chatId: dbConfig?.telegramChatId || process.env.TELEGRAM_CHAT_ID || '',
-        groupName: dbConfig?.telegramGroupName || ''
+        groupName: dbConfig?.telegramGroupName || '',
+        botUsername: DEFAULT_TELEGRAM_BOT_USERNAME
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -463,11 +467,15 @@ do_khan_cap: "Chưa xác định"`;
   app.post('/api/telegram/config', async (req, res) => {
     try {
       const { token, chatId, groupName } = req.body;
+      const targetToken = token?.trim() || DEFAULT_TELEGRAM_BOT_TOKEN;
+      const targetChatId = chatId?.trim() || '';
+      const targetGroupName = groupName?.trim() || '';
+
       if (dbFirestore) {
         await setDoc(doc(dbFirestore, 'settings', 'app_config'), {
-          telegramBotToken: token?.trim() || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8',
-          telegramChatId: chatId?.trim() || '',
-          telegramGroupName: groupName?.trim() || '',
+          telegramBotToken: targetToken,
+          telegramChatId: targetChatId,
+          telegramGroupName: targetGroupName,
           updatedAt: new Date().toISOString()
         }, { merge: true });
       }
@@ -477,11 +485,60 @@ do_khan_cap: "Chưa xác định"`;
     }
   });
 
+  // Query Webhook Info from Telegram API
+  app.get('/api/telegram/webhook-info', async (req, res) => {
+    try {
+      const dbConfig = await getTelegramConfigFromDb();
+      const targetToken = dbConfig?.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
+      const response = await fetch(`https://api.telegram.org/bot${targetToken}/getWebhookInfo`);
+      const data = await response.json();
+      res.json({ success: true, info: data.result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Set Webhook Endpoint for Telegram Bot
+  app.post('/api/telegram/set-webhook', async (req, res) => {
+    try {
+      const { webhookUrl, token } = req.body;
+      const dbConfig = await getTelegramConfigFromDb();
+      const targetToken = token?.trim() || dbConfig?.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
+
+      // Determine webhook url
+      let finalWebhookUrl = webhookUrl;
+      if (!finalWebhookUrl) {
+        const appUrl = process.env.APP_URL || (req.protocol + '://' + req.get('host'));
+        finalWebhookUrl = `${appUrl}/api/telegram/webhook`;
+      }
+
+      console.log(`Setting Telegram Webhook for bot @${DEFAULT_TELEGRAM_BOT_USERNAME} to ${finalWebhookUrl}`);
+      const response = await fetch(`https://api.telegram.org/bot${targetToken}/setWebhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: finalWebhookUrl,
+          allowed_updates: ['message', 'callback_query', 'edited_message', 'channel_post'],
+          drop_pending_updates: false
+        })
+      });
+
+      const data = await response.json();
+      if (!data.ok) {
+        return res.status(400).json({ error: data.description || 'Lỗi khi cài đặt Webhook trên Telegram' });
+      }
+
+      res.json({ success: true, result: data, webhookUrl: finalWebhookUrl });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Reset/Delete Webhook endpoint to unblock Telegram bot
   app.post('/api/telegram/reset-webhook', async (req, res) => {
     try {
       const { token } = req.body;
-      const targetToken = token || process.env.TELEGRAM_BOT_TOKEN || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8';
+      const targetToken = token || process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
       const response = await fetch(`https://api.telegram.org/bot${targetToken}/deleteWebhook?drop_pending_updates=false`);
       const data = await response.json();
       res.json({ success: true, result: data });
@@ -490,69 +547,417 @@ do_khan_cap: "Chưa xác định"`;
     }
   });
 
-  // Direct Telegram Integration Endpoints
+  // Helper to escape HTML for Telegram messages
+  function escapeHTML(str: string) {
+    return (str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  // Telegram Webhook Handler (Incoming Messages & Button Callbacks)
+  app.post('/api/telegram/webhook', async (req, res) => {
+    try {
+      const update = req.body;
+      const dbConfig = await getTelegramConfigFromDb();
+      const botToken = dbConfig?.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
+
+      // 1. Handle Button Clicks (Inline Keyboard Callback Queries)
+      if (update.callback_query) {
+        const callbackQuery = update.callback_query;
+        const callbackData = callbackQuery.data || '';
+        const fromUser = callbackQuery.from;
+        const technicianName = fromUser.first_name ? `${fromUser.first_name} ${fromUser.last_name || ''}`.trim() : (fromUser.username ? `@${fromUser.username}` : 'Kỹ thuật viên CSVC');
+        const chatId = callbackQuery.message?.chat?.id;
+        const messageId = callbackQuery.message?.message_id;
+
+        console.log(`[Telegram Webhook] Callback: ${callbackData} by ${technicianName}`);
+
+        if (callbackData.startsWith('accept_')) {
+          const incidentId = callbackData.replace('accept_', '');
+          const updateTimestamp = new Date().toISOString();
+
+          // Update Firestore
+          if (dbFirestore) {
+            try {
+              await setDoc(doc(dbFirestore, 'incidents', incidentId), {
+                status: 'in_progress',
+                acceptedBy: technicianName,
+                acceptedAt: updateTimestamp,
+                updatedAt: updateTimestamp
+              }, { merge: true });
+            } catch (e) {
+              console.error('Error updating Firestore on callback accept:', e);
+            }
+          }
+
+          // Update PostgreSQL
+          try {
+            await db.update(incidents).set({
+              status: 'in_progress'
+            }).where(eq(incidents.id, incidentId));
+          } catch (e) {
+            console.error('Error updating CloudSQL on callback accept:', e);
+          }
+
+          // Answer Callback query popup
+          await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              callback_query_id: callbackQuery.id,
+              text: `✅ ${technicianName} đã tiếp nhận xử lý sự cố [${incidentId}]!`,
+              show_alert: false
+            })
+          });
+
+          // Edit Telegram message to update status and keep resolve button
+          if (chatId && messageId && callbackQuery.message?.text) {
+            const originalText = callbackQuery.message.text;
+            const updatedText = `${originalText}\n\n⚙️ <b>TIẾP NHẬN XỬ LÝ:</b>\n👨‍🔧 Người nhận: <b>${escapeHTML(technicianName)}</b>\n🕒 Lúc: ${new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}\nTrạng thái: 🟡 <i>Đang kiểm tra & sửa chữa</i>`;
+
+            await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: chatId,
+                message_id: messageId,
+                text: updatedText,
+                parse_mode: 'HTML',
+                reply_markup: {
+                  inline_keyboard: [
+                    [
+                      { text: '🎉 Đã Khắc Phục Xong', callback_data: `resolve_${incidentId}` }
+                    ]
+                  ]
+                }
+              })
+            });
+          }
+
+          return res.status(200).json({ ok: true });
+        }
+
+        if (callbackData.startsWith('resolve_')) {
+          const incidentId = callbackData.replace('resolve_', '');
+          const resolveTimestamp = new Date().toISOString();
+
+          // Update Firestore
+          if (dbFirestore) {
+            try {
+              const incRef = doc(dbFirestore, 'incidents', incidentId);
+              const incSnap = await getDoc(incRef);
+              const incData = incSnap.exists() ? incSnap.data() : null;
+
+              await setDoc(incRef, {
+                status: 'resolved',
+                resolvedBy: technicianName,
+                resolvedAt: resolveTimestamp,
+                resolutionNotes: 'Đã khắc phục hoàn tất qua Telegram Bot',
+                updatedAt: resolveTimestamp
+              }, { merge: true });
+
+              // Reset device status to active if matched
+              if (incData?.deviceId) {
+                await setDoc(doc(dbFirestore, 'devices', incData.deviceId), {
+                  status: 'active',
+                  updatedAt: resolveTimestamp
+                }, { merge: true });
+              }
+            } catch (e) {
+              console.error('Error updating Firestore on callback resolve:', e);
+            }
+          }
+
+          // Update PostgreSQL
+          try {
+            await db.update(incidents).set({
+              status: 'resolved',
+              resolvedAt: resolveTimestamp,
+              resolutionNotes: 'Đã khắc phục hoàn tất qua Telegram Bot'
+            }).where(eq(incidents.id, incidentId));
+          } catch (e) {
+            console.error('Error updating CloudSQL on callback resolve:', e);
+          }
+
+          // Answer Callback query
+          await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              callback_query_id: callbackQuery.id,
+              text: `🎉 Sự cố [${incidentId}] đã được khắc phục hoàn tất!`,
+              show_alert: true
+            })
+          });
+
+          // Edit Telegram message to show resolved state
+          if (chatId && messageId && callbackQuery.message?.text) {
+            const originalText = callbackQuery.message.text;
+            const updatedText = `${originalText}\n\n✅ <b>HOÀN TẤT KHẮC PHỤC:</b>\n👨‍🔧 Kỹ thuật viên: <b>${escapeHTML(technicianName)}</b>\n🕒 Lúc: ${new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}\nTrạng thái: 🟢 <b>Đã xử lý thành công (Hoạt động bình thường)</b>`;
+
+            await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: chatId,
+                message_id: messageId,
+                text: updatedText,
+                parse_mode: 'HTML'
+              })
+            });
+          }
+
+          return res.status(200).json({ ok: true });
+        }
+      }
+
+      // 2. Handle Text Messages
+      const message = update.message || update.channel_post;
+      if (message && message.text) {
+        const chatId = message.chat.id;
+        const text = message.text.trim();
+        const senderName = message.from?.first_name ? `${message.from.first_name} ${message.from.last_name || ''}`.trim() : (message.from?.username ? `@${message.from.username}` : 'Thầy/Cô');
+
+        // Automatically store chat ID in app_config if empty
+        if (dbFirestore) {
+          try {
+            const curConfig = await getTelegramConfigFromDb();
+            if (!curConfig?.telegramChatId) {
+              await setDoc(doc(dbFirestore, 'settings', 'app_config'), {
+                telegramChatId: String(chatId),
+                telegramGroupName: message.chat.title || senderName,
+                updatedAt: new Date().toISOString()
+              }, { merge: true });
+              console.log(`Auto-saved Chat ID ${chatId} to settings/app_config`);
+            }
+          } catch (e) {}
+        }
+
+        // Handle /start or /help commands
+        if (text.startsWith('/start') || text.startsWith('/help') || text.startsWith('/menu')) {
+          const welcomeMsg = 
+            `👋 <b>Xin chào ${escapeHTML(senderName)}!</b>\n\n` +
+            `Tôi là <b>Trợ Lý Ảo CSVC & Hỗ Trợ Giảng Dạy (@${DEFAULT_TELEGRAM_BOT_USERNAME})</b> - Trường Đại học Kinh tế, ĐH Đà Nẵng (DUE).\n\n` +
+            `🛠️ <b>HƯỚNG DẪN XỬ LÝ LỖI GIẢNG ĐƯỜNG:</b>\n` +
+            `• <b>Máy chiếu / HDMI</b>: Nhấn <code>Windows + P</code> chọn <b>Duplicate</b>. Thử cắm lại cáp hoặc chọn cổng HDMI 1/2.\n` +
+            `• <b>Micro âm thanh</b>: Kiểm tra pin, kiểm tra công tắc nguồn và Volume Amply trên bục giảng.\n` +
+            `• <b>Điều hoà nhiệt độ</b>: Bật aptomat phòng học, dùng remote chọn chế độ Cool (24-26°C).\n\n` +
+            `🚨 <b>BÁO HỎNG SIÊU TỐC:</b>\n` +
+            `Quý Thầy/Cô chỉ cần nhắn tin theo cú pháp:\n` +
+            `<i>"Phòng D305 máy chiếu không lên nguồn"</i> hoặc <i>"Phòng E201 micro bị rè"</i>.\n\n` +
+            `⚡ <i>Hệ thống AI sẽ tạo phiếu báo hỏng và chuyển ngay nút Tiếp nhận xử lý cho Kỹ thuật viên!</i>`;
+
+          await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: welcomeMsg,
+              parse_mode: 'HTML'
+            })
+          });
+
+          return res.status(200).json({ ok: true });
+        }
+
+        // Process message with AI / Incident detector
+        const lower = text.toLowerCase();
+        const roomRegex = /([a-z]\s?\d{3,4}|hội trường\s?[a-z0-9]+|phòng\s?[a-z0-9-]+)/i;
+        const roomMatch = text.match(roomRegex);
+        const detectedRoom = roomMatch ? roomMatch[0].trim() : '';
+
+        // Device detection
+        let detectedDevice = '';
+        if (lower.includes('máy chiếu') || lower.includes('projector')) detectedDevice = 'Máy chiếu';
+        else if (lower.includes('micro') || lower.includes('mic') || lower.includes('âm thanh') || lower.includes('loa')) detectedDevice = 'Micro & Âm thanh';
+        else if (lower.includes('điều hoà') || lower.includes('máy lạnh') || lower.includes('mát')) detectedDevice = 'Điều hoà nhiệt độ';
+        else if (lower.includes('cáp') || lower.includes('hdmi') || lower.includes('vga')) detectedDevice = 'Cáp kết nối HDMI';
+        else if (lower.includes('mạng') || lower.includes('wifi') || lower.includes('internet')) detectedDevice = 'Mạng Internet / Wifi';
+        else if (lower.includes('đèn') || lower.includes('quạt') || lower.includes('điện')) detectedDevice = 'Hệ thống điện chiếu sáng';
+
+        const isIncident = detectedRoom || detectedDevice || lower.includes('hỏng') || lower.includes('lỗi') || lower.includes('không lên') || lower.includes('cháy') || lower.includes('rè') || lower.includes('hư');
+
+        if (isIncident && (detectedRoom || detectedDevice)) {
+          const incidentId = `INC-${Date.now().toString().slice(-6)}`;
+          const finalRoom = detectedRoom || 'Phòng học giảng đường';
+          const finalDevice = detectedDevice || 'Thiết bị giảng đường';
+          const finalReporter = senderName;
+          const reportedTime = new Date().toISOString();
+
+          // 1. Save incident to Firestore
+          if (dbFirestore) {
+            try {
+              await setDoc(doc(dbFirestore, 'incidents', incidentId), {
+                id: incidentId,
+                deviceId: `DEV-${Date.now()}`,
+                deviceSn: `SN-${Date.now().toString().slice(-6)}`,
+                deviceName: finalDevice,
+                reporterName: finalReporter,
+                faculty: 'Khoa / Giảng đường',
+                room: finalRoom,
+                severity: lower.includes('khẩn') || lower.includes('cháy') ? 'urgent' : 'high',
+                status: 'open',
+                description: text,
+                reportedAt: reportedTime,
+                source: 'telegram_bot'
+              });
+            } catch (fErr) {
+              console.error('Error saving incident to Firestore from webhook:', fErr);
+            }
+          }
+
+          // 2. Save to Cloud SQL
+          try {
+            await db.insert(incidents).values({
+              id: incidentId,
+              deviceId: `DEV-${Date.now()}`,
+              deviceSn: `SN-${Date.now().toString().slice(-6)}`,
+              deviceName: finalDevice,
+              reporterName: finalReporter,
+              faculty: 'Khoa / Giảng đường',
+              room: finalRoom,
+              severity: 'high',
+              status: 'open',
+              description: text,
+              reportedAt: reportedTime
+            });
+          } catch (sqlErr) {
+            console.error('Error saving incident to Cloud SQL from webhook:', sqlErr);
+          }
+
+          // 3. Send Incident Notification with Action Buttons
+          const ticketMsg = 
+            `🚨 <b>PHIẾU BÁO SỰ CỐ GIẢNG ĐƯỜNG MỚI</b> 🚨\n\n` +
+            `📍 <b>Vị trí:</b> ${escapeHTML(finalRoom)}\n` +
+            `📟 <b>Thiết bị:</b> ${escapeHTML(finalDevice)}\n` +
+            `📝 <b>Nội dung:</b> <i>${escapeHTML(text)}</i>\n` +
+            `👤 <b>Người báo:</b> ${escapeHTML(finalReporter)}\n` +
+            `🕒 <b>Thời gian:</b> ${new Date().toLocaleString('vi-VN')}\n` +
+            `📌 <b>Mã phiếu:</b> <code>${incidentId}</code>\n\n` +
+            `💡 <i>Kỹ thuật viên vui lòng bấm nút bên dưới để nhận việc và cập nhật trạng thái:</i>`;
+
+          await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: ticketMsg,
+              parse_mode: 'HTML',
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    { text: '✅ Tiếp Nhận Xử Lý', callback_data: `accept_${incidentId}` },
+                    { text: '🎉 Đã Khắc Phục Xong', callback_data: `resolve_${incidentId}` }
+                  ]
+                ]
+              }
+            })
+          });
+
+          return res.status(200).json({ ok: true });
+        } else {
+          // General troubleshooting assistance reply
+          let guideText = '';
+          if (lower.includes('hdmi') || lower.includes('máy chiếu') || lower.includes('không lên')) {
+            guideText = `💡 <b>Khắc phục nhanh Máy chiếu & HDMI:</b>\n1. Kiểm tra đèn nguồn máy chiếu (LED xanh).\n2. Nhấn <code>Windows + P</code> trên laptop và chọn <b>Duplicate</b>.\n3. Rút và cắm lại chặt 2 đầu cáp HDMI.\n\nNếu vẫn không được, Thầy/Cô hãy gửi số phòng (ví dụ: <i>"Phòng D305 máy chiếu hỏng"</i>) để kỹ thuật viên đến hỗ trợ ngay!`;
+          } else if (lower.includes('mic') || lower.includes('micro') || lower.includes('tiếng') || lower.includes('âm thanh')) {
+            guideText = `🎤 <b>Khắc phục nhanh Micro & Âm thanh:</b>\n1. Kiểm tra pin micro (đèn đỏ mờ là hết pin).\n2. Kiểm tra núm âm lượng Master trên Amply bục giảng.\n\nNếu cần mang micro dự phòng, Thầy/Cô hãy nhắn số phòng để bộ phận trực ban hỗ trợ!`;
+          } else {
+            guideText = `👋 Trợ lý AI CSVC DUE đã nhận được tin nhắn của Quý Thầy/Cô.\n\nĐể báo hỏng thiết bị gấp, Thầy/Cô vui lòng nhắn rõ <b>Tên phòng</b> và <b>Thiết bị</b> (Ví dụ: <i>"Phòng D305 máy chiếu không lên"</i>) để hệ thống tạo phiếu xử lý tức thì!`;
+          }
+
+          await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: guideText,
+              parse_mode: 'HTML'
+            })
+          });
+
+          return res.status(200).json({ ok: true });
+        }
+      }
+
+      res.status(200).json({ ok: true });
+    } catch (err: any) {
+      console.error('Error handling Telegram webhook:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Direct Telegram Integration Endpoints (Outgoing Alerts from Web UI)
   app.post('/api/telegram/send', async (req, res) => {
     try {
       const { token, chatId, message, incident, eventType = 'new', resolutionNotes, updatedBy } = req.body;
-      let targetToken = token || process.env.TELEGRAM_BOT_TOKEN || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8';
-      let targetChatId = chatId || process.env.TELEGRAM_CHAT_ID;
-
-      // If chatId is not passed from client, read from Firestore settings/app_config
-      if (!targetChatId) {
-        const dbConfig = await getTelegramConfigFromDb();
-        if (dbConfig?.telegramChatId) {
-          targetChatId = dbConfig.telegramChatId;
-        }
-        if (!targetToken && dbConfig?.telegramBotToken) {
-          targetToken = dbConfig.telegramBotToken;
-        }
-      }
+      const dbConfig = await getTelegramConfigFromDb();
+      let targetToken = token || dbConfig?.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
+      let targetChatId = chatId || dbConfig?.telegramChatId || process.env.TELEGRAM_CHAT_ID;
 
       if (!targetToken) {
         return res.status(400).json({ error: 'Chưa cấu hình Telegram Bot Token' });
       }
       if (!targetChatId) {
         return res.status(400).json({ 
-          error: 'Chưa cung cấp Telegram Chat ID người nhận. Vui lòng vào Cấu hình Telegram để kết nối bot @japancsvcbot!',
+          error: 'Chưa cung cấp Telegram Chat ID người nhận. Vui lòng vào Cấu hình Telegram để kết nối bot @hotrogiangday_bot!',
           noChatId: true 
         });
       }
 
-      function escapeHTML(str: string) {
-        return (str || '')
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;');
-      }
-
       let text = message;
+      let replyMarkup: any = undefined;
+
       if (incident) {
         const formatRoom = (rm: string) => {
           if (!rm) return 'Không rõ phòng';
           if (rm.toLowerCase().startsWith('phòng')) return rm;
           return `Phòng ${rm}`;
         };
+        const incidentId = incident.id || incident.deviceSn || `INC-${Date.now().toString().slice(-6)}`;
         
         if (eventType === 'accepted') {
-          text = `⚙️<b>KỸ THUẬT ĐÃ TIẾP NHẬN SỰ CỐ</b> ⚙️\n` +
-                 `🏢 Vị trí / Phòng: <b>${escapeHTML(formatRoom(incident.room))}</b>\n` +
-                 `📟 Thiết bị: <b>${escapeHTML(incident.deviceName)}</b> (${escapeHTML(incident.deviceSn || 'N/A')})\n` +
-                 `👤 Người báo cáo: <b>${escapeHTML(incident.reporterName || 'Cán bộ')}</b>\n` +
-                 `🔧 Kỹ thuật viên tiếp nhận: <b>${escapeHTML(updatedBy || 'Bộ phận Kỹ thuật DUE')}</b>\n` +
-                 `🕒 Trạng thái: <b>Đang tiến hành kiểm tra & sửa chữa</b>`;
+          text = `⚙️ <b>KỸ THUẬT ĐÃ TIẾP NHẬN SỰ CỐ</b> ⚙️\n\n` +
+                 `🏢 <b>Vị trí:</b> ${escapeHTML(formatRoom(incident.room))}\n` +
+                 `📟 <b>Thiết bị:</b> ${escapeHTML(incident.deviceName)} (${escapeHTML(incident.deviceSn || 'N/A')})\n` +
+                 `👤 <b>Người báo cáo:</b> ${escapeHTML(incident.reporterName || 'Cán bộ')}\n` +
+                 `🔧 <b>Kỹ thuật viên tiếp nhận:</b> <b>${escapeHTML(updatedBy || 'Bộ phận Kỹ thuật DUE')}</b>\n` +
+                 `🕒 <b>Thời gian:</b> ${new Date().toLocaleString('vi-VN')}\n` +
+                 `Trạng thái: 🟡 <b>Đang tiến hành kiểm tra & sửa chữa</b>`;
+
+          replyMarkup = {
+            inline_keyboard: [
+              [
+                { text: '🎉 Đã Khắc Phục Xong', callback_data: `resolve_${incidentId}` }
+              ]
+            ]
+          };
         } else if (eventType === 'resolved') {
-          text = `✅<b>SỰ CỐ ĐÃ ĐƯỢC KHẮC PHỤC HOÀN TẤT</b> ✅\n` +
-                 `🏢 Vị trí / Phòng: <b>${escapeHTML(formatRoom(incident.room))}</b>\n` +
-                 `📟 Thiết bị: <b>${escapeHTML(incident.deviceName)}</b> (${escapeHTML(incident.deviceSn || 'N/A')})\n` +
-                 `📝 Kết quả xử lý: <i>${escapeHTML(resolutionNotes || 'Đã khắc phục xong và thiết bị hoạt động bình thường')}</i>\n` +
-                 `👨‍🔧 Người xử lý: <b>${escapeHTML(updatedBy || 'Bộ phận Kỹ thuật DUE')}</b>\n` +
-                 `🕒 Hoàn tất lúc: ${new Date().toLocaleString('vi-VN')}`;
+          text = `✅ <b>SỰ CỐ ĐÃ ĐƯỢC KHẮC PHỤC HOÀN TẤT</b> ✅\n\n` +
+                 `🏢 <b>Vị trí:</b> ${escapeHTML(formatRoom(incident.room))}\n` +
+                 `📟 <b>Thiết bị:</b> ${escapeHTML(incident.deviceName)} (${escapeHTML(incident.deviceSn || 'N/A')})\n` +
+                 `📝 <b>Kết quả xử lý:</b> <i>${escapeHTML(resolutionNotes || 'Đã khắc phục xong và thiết bị hoạt động bình thường')}</i>\n` +
+                 `👨‍🔧 <b>Người xử lý:</b> <b>${escapeHTML(updatedBy || 'Bộ phận Kỹ thuật DUE')}</b>\n` +
+                 `🕒 <b>Hoàn tất lúc:</b> ${new Date().toLocaleString('vi-VN')}\n` +
+                 `Trạng thái: 🟢 <b>Hoạt động bình thường</b>`;
         } else {
-          text = `🚨<b>BÁO CÁO SỰ CỐ THIẾT BỊ MỚI</b> 🚨\n` +
-                 `🏢 Vị trí / Phòng: <b>${escapeHTML(formatRoom(incident.room))}</b>\n` +
-                 `📟 Thiết bị cần báo lỗi: <b>${escapeHTML(incident.deviceName)}</b>\n` +
-                 `👤 Người báo cáo: <b>${escapeHTML(incident.reporterName || 'Cán Bộ')}</b>\n` +
-                 `📝 Mô tả: <i>${escapeHTML(incident.description)}</i>`;
+          text = `🚨 <b>BÁO CÁO SỰ CỐ THIẾT BỊ MỚI</b> 🚨\n\n` +
+                 `🏢 <b>Vị trí:</b> ${escapeHTML(formatRoom(incident.room))}\n` +
+                 `📟 <b>Thiết bị:</b> ${escapeHTML(incident.deviceName)} (${escapeHTML(incident.deviceSn || 'N/A')})\n` +
+                 `👤 <b>Người báo cáo:</b> ${escapeHTML(incident.reporterName || 'Cán Bộ')}\n` +
+                 `📝 <b>Nội dung sự cố:</b> <i>${escapeHTML(incident.description)}</i>\n` +
+                 `🕒 <b>Thời gian:</b> ${new Date().toLocaleString('vi-VN')}\n` +
+                 `📌 <b>Mã phiếu:</b> <code>${incidentId}</code>`;
+
+          replyMarkup = {
+            inline_keyboard: [
+              [
+                { text: '✅ Tiếp Nhận Xử Lý', callback_data: `accept_${incidentId}` },
+                { text: '🎉 Đã Khắc Phục Xong', callback_data: `resolve_${incidentId}` }
+              ]
+            ]
+          };
         }
       }
 
@@ -563,7 +968,8 @@ do_khan_cap: "Chưa xác định"`;
         body: JSON.stringify({
           chat_id: targetChatId,
           text: text || 'Tín hiệu kết nối từ DUE Equipment Management hoạt động tốt!',
-          parse_mode: 'HTML'
+          parse_mode: 'HTML',
+          reply_markup: replyMarkup
         })
       });
 
@@ -583,7 +989,7 @@ do_khan_cap: "Chưa xác định"`;
   app.post('/api/telegram/get-updates', async (req, res) => {
     try {
       const { token } = req.body;
-      const targetToken = token || process.env.TELEGRAM_BOT_TOKEN || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8';
+      const targetToken = token || process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
 
       if (!targetToken) {
         return res.status(400).json({ error: 'Chưa cung cấp Telegram Bot Token' });
@@ -604,7 +1010,7 @@ do_khan_cap: "Chưa xác định"`;
       if (!data.ok) {
         if (data.description && data.description.includes('Conflict')) {
           return res.status(400).json({ 
-            error: 'Bot đang có một kết nối khác mở. Bạn vui lòng mở Telegram, nhắn tin bất kỳ (ví dụ /start) cho bot @japancsvcbot rồi nhấn Quét lại, hoặc nhập Chat ID thủ công.',
+            error: 'Bot đang có kết nối khác mở. Bạn vui lòng mở Telegram, nhắn tin bất kỳ (ví dụ /start) cho bot @hotrogiangday_bot rồi nhấn Quét lại, hoặc nhập Chat ID thủ công.',
             isConflict: true 
           });
         }
