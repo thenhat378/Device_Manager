@@ -41,15 +41,6 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Auto clean-up any Telegram webhook on startup if token exists
-  const defaultTgToken = process.env.TELEGRAM_BOT_TOKEN;
-  if (defaultTgToken) {
-    fetch(`https://api.telegram.org/bot${defaultTgToken}/deleteWebhook?drop_pending_updates=true`).catch(() => {});
-  }
-
-  // Utility to push to n8n webhook log in database
-
-
   // --- API ENDPOINTS ---
 
   // Health check
@@ -433,19 +424,35 @@ do_khan_cap: "Chưa xác định"`;
   const DEFAULT_TELEGRAM_BOT_TOKEN = '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI';
   const DEFAULT_TELEGRAM_BOT_USERNAME = 'hotrogiangday_bot';
 
-  // Helper to read Telegram configuration from Firestore database
+  // Helper to read and auto-migrate Telegram configuration from Firestore database
   async function getTelegramConfigFromDb(): Promise<{ telegramBotToken?: string; telegramChatId?: string; telegramGroupName?: string } | null> {
     try {
       if (dbFirestore) {
         const docSnap = await getDoc(doc(dbFirestore, 'settings', 'app_config'));
         if (docSnap.exists()) {
-          return docSnap.data() as any;
+          const data = docSnap.data() as any;
+          // Auto-fix old expired/revoked token 8715568190...
+          if (data && (!data.telegramBotToken || data.telegramBotToken.includes('8715568190') || data.telegramBotToken !== DEFAULT_TELEGRAM_BOT_TOKEN)) {
+            await setDoc(doc(dbFirestore, 'settings', 'app_config'), {
+              telegramBotToken: DEFAULT_TELEGRAM_BOT_TOKEN,
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+            data.telegramBotToken = DEFAULT_TELEGRAM_BOT_TOKEN;
+          }
+          return data;
+        } else {
+          // Initialize if not exists
+          await setDoc(doc(dbFirestore, 'settings', 'app_config'), {
+            telegramBotToken: DEFAULT_TELEGRAM_BOT_TOKEN,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+          return { telegramBotToken: DEFAULT_TELEGRAM_BOT_TOKEN };
         }
       }
     } catch (e: any) {
       console.warn('Could not read settings/app_config from Firestore:', e.message);
     }
-    return null;
+    return { telegramBotToken: DEFAULT_TELEGRAM_BOT_TOKEN };
   }
 
   // Get current global Telegram config

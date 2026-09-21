@@ -99,7 +99,14 @@ export default function App() {
 
   // Telegram Integration State
   const [telegramChatId, setTelegramChatId] = useState<string>(() => localStorage.getItem('DUE_TELEGRAM_CHAT_ID') || '');
-  const [telegramBotToken, setTelegramBotToken] = useState<string>(() => localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN') || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8');
+  const [telegramBotToken, setTelegramBotToken] = useState<string>(() => {
+    const saved = localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN');
+    if (!saved || saved.includes('8715568190')) {
+      localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI');
+      return '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI';
+    }
+    return saved;
+  });
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
 
   // PWA Install Prompt State
@@ -305,8 +312,13 @@ export default function App() {
           localStorage.setItem('DUE_TELEGRAM_CHAT_ID', data.telegramChatId);
         }
         if (data?.telegramBotToken) {
-          setTelegramBotToken(data.telegramBotToken);
-          localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', data.telegramBotToken);
+          if (data.telegramBotToken.includes('8715568190')) {
+            setTelegramBotToken('8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI');
+            localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI');
+          } else {
+            setTelegramBotToken(data.telegramBotToken);
+            localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', data.telegramBotToken);
+          }
         }
       }
     }, (error) => {
@@ -643,7 +655,8 @@ export default function App() {
   };
 
   const sendTelegramAlert = async (incident: any, eventType: 'new' | 'accepted' | 'resolved', resolutionNotes?: string) => {
-    const token = telegramBotToken || localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN') || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8';
+    const rawToken = telegramBotToken || localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN');
+    const token = (!rawToken || rawToken.includes('8715568190')) ? '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI' : rawToken;
     const chatId = telegramChatId || localStorage.getItem('DUE_TELEGRAM_CHAT_ID');
 
     try {

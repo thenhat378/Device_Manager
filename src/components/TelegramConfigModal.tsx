@@ -34,7 +34,14 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setChatId(currentChatId || localStorage.getItem('DUE_TELEGRAM_CHAT_ID') || '');
-      setBotToken(currentBotToken || localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN') || DEFAULT_BOT_TOKEN);
+      const savedToken = localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN');
+      const effectiveToken = (currentBotToken && !currentBotToken.includes('8715568190')) 
+        ? currentBotToken 
+        : (savedToken && !savedToken.includes('8715568190')) 
+          ? savedToken 
+          : DEFAULT_BOT_TOKEN;
+      setBotToken(effectiveToken);
+      localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', effectiveToken);
       setStatusMessage(null);
       fetchWebhookInfo();
     }

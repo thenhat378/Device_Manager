@@ -178,10 +178,15 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
   const [n8nTesting, setN8nTesting] = useState(false);
   const [n8nTestResult, setN8nTestResult] = useState<string | null>(null);
 
-  // Telegram Bot (@japancsvcbot) Integration State
-  const [telegramBotToken, setTelegramBotToken] = useState<string>(
-    localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN') || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8'
-  );
+  // Telegram Bot (@hotrogiangday_bot) Integration State
+  const [telegramBotToken, setTelegramBotToken] = useState<string>(() => {
+    const saved = localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN');
+    if (!saved || saved.includes('8715568190')) {
+      localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI');
+      return '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI';
+    }
+    return saved;
+  });
   const [telegramChatId, setTelegramChatId] = useState<string>(
     localStorage.getItem('DUE_TELEGRAM_CHAT_ID') || ''
   );
@@ -199,9 +204,12 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
     const unsub = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
-        if (data && data.telegramBotToken) {
+        if (data && data.telegramBotToken && !data.telegramBotToken.includes('8715568190')) {
           setTelegramBotToken(data.telegramBotToken);
           localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', data.telegramBotToken);
+        } else {
+          setTelegramBotToken('8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI');
+          localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI');
         }
         if (data && data.telegramChatId) {
           setTelegramChatId(data.telegramChatId);
@@ -302,18 +310,18 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
       localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', telegramBotToken);
       localStorage.setItem('DUE_TELEGRAM_CHAT_ID', telegramChatId);
 
-      const res = await fetch('/api/telegram/send', {
+        const res = await fetch('/api/telegram/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           token: telegramBotToken,
           chatId: telegramChatId,
-          message: '🚨<b>KIỂM TRA KẾT NỐI TELEGRAM BOT (@japancsvcbot)</b>\nHệ thống Quản lý Thiết bị DUE đã kết nối thành công tới bot thông báo sự cố!'
+          message: '🚨<b>KIỂM TRA KẾT NỐI TELEGRAM BOT (@hotrogiangday_bot)</b>\nHệ thống Quản lý Thiết bị DUE đã kết nối thành công tới bot thông báo sự cố!'
         })
       });
       const data = await res.json();
       if (res.ok) {
-        setTelegramTestResult('✅ Đã gửi tin nhắn thử nghiệm đến Telegram bot @japancsvcbot thành công!');
+        setTelegramTestResult('✅ Đã gửi tin nhắn thử nghiệm đến Telegram bot @hotrogiangday_bot thành công!');
       } else {
         setTelegramTestResult(`⚠️ Lỗi: ${data.error || 'Không thể gửi tin nhắn qua Telegram'}`);
       }
@@ -336,9 +344,9 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
       });
       const data = await res.json();
       if (res.ok) {
-        setTelegramTestResult('✅ <b>Đã xóa Webhook Telegram thành công!</b> Bạn hãy gửi tin nhắn cho bot @japancsvcbot rồi nhấn nút <b>"🔍 Tự động quét Chat ID"</b>.');
+        setTelegramTestResult('✅ <b>Đã giải phóng kết nối Telegram thành công!</b> Bạn hãy gửi tin nhắn cho bot @hotrogiangday_bot rồi nhấn nút <b>"🔍 Tự động quét Chat ID"</b>.');
       } else {
-        setTelegramTestResult(`⚠️ Không thể xóa webhook: ${data.error}`);
+        setTelegramTestResult(`⚠️ Không thể reset: ${data.error}`);
       }
     } catch (err: any) {
       setTelegramTestResult(`❌ Lỗi kết nối: ${err.message}`);
@@ -385,9 +393,9 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
           console.warn('Auto save to db error:', dbErr);
         }
 
-        setTelegramTestResult(`✅ <b>Đã quét & tự động lưu Chat ID [${firstChat.id}] (${firstChat.name || firstChat.type})!</b> Hệ thống đã kết nối trực tiếp với @japancsvcbot.`);
+        setTelegramTestResult(`✅ <b>Đã quét & tự động lưu Chat ID [${firstChat.id}] (${firstChat.name || firstChat.type})!</b> Hệ thống đã kết nối trực tiếp với @hotrogiangday_bot.`);
       } else {
-        const msg = data.error || '⚠️ Không tìm thấy tin nhắn mới. Hãy chắc chắn bạn đã gửi ít nhất 1 tin nhắn (ví dụ: /start) tới bot @japancsvcbot trên Telegram rồi nhấn lại nút quét.';
+        const msg = data.error || '⚠️ Không tìm thấy tin nhắn mới. Hãy chắc chắn bạn đã gửi ít nhất 1 tin nhắn (ví dụ: /start) tới bot @hotrogiangday_bot trên Telegram rồi nhấn lại nút quét.';
         setTelegramTestResult(msg);
       }
     } catch (err: any) {
@@ -614,7 +622,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
               1. Quét mã QR tại phòng <strong>\${selectedAdminRoom}</strong> để báo hỏng nhanh.<br/>
               2. Các loại thiết bị hỗ trợ: <strong>Máy chiếu, Dây cáp HDMI, Dây VGA, Thiết bị điện, Điều hoà, Âm thanh, Bàn ghế</strong>.<br/>
               3. Chọn thiết bị/loại thiết bị gặp sự cố, nhập mô tả và gửi báo cáo.<br/>
-              4. Bộ phận kỹ thuật sẽ nhận được thông báo tức thì qua Telegram Bot (@japancsvcbot)!
+              4. Bộ phận kỹ thuật sẽ nhận được thông báo tức thì qua Telegram Bot (@hotrogiangday_bot)!
             </div>
           </div>
           <script>
@@ -919,7 +927,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
       }
     }
 
-    // 3. Trigger direct Telegram Bot (@japancsvcbot) notification if chat id configured
+    // 3. Trigger direct Telegram Bot (@hotrogiangday_bot) notification if chat id configured
     if (telegramChatId.trim()) {
       try {
         localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', telegramBotToken);
@@ -943,7 +951,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
     }
 
     if (isNotified) {
-      alert('Báo cáo sự cố hư hỏng đã được tạo và hệ thống đã gửi thông báo thành công qua Telegram Bot (@japancsvcbot)!');
+      alert('Báo cáo sự cố hư hỏng đã được tạo và hệ thống đã gửi thông báo thành công qua Telegram Bot (@hotrogiangday_bot)!');
     } else {
       alert('Báo cáo sự cố hư hỏng đã được tạo thành công!');
     }
@@ -1780,7 +1788,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                         configTab === 'telegram' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      🤖 Telegram Bot (@japancsvcbot)
+                      🤖 Telegram Bot (@hotrogiangday_bot)
                     </button>
                     <button
                       type="button"
@@ -1807,18 +1815,18 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                   <div className="space-y-3.5">
                     <div className="bg-sky-50/70 text-sky-900 p-3 rounded-xl border border-sky-200 text-[11px] leading-relaxed space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <p className="font-bold">💡 Hướng dẫn cấu hình Telegram Bot (@japancsvcbot):</p>
+                        <p className="font-bold">💡 Hướng dẫn cấu hình Telegram Bot (@hotrogiangday_bot):</p>
                         <a 
-                          href="https://t.me/japancsvcbot" 
+                          href="https://t.me/hotrogiangday_bot" 
                           target="_blank" 
                           rel="noopener noreferrer" 
                           className="inline-flex items-center gap-1 text-sky-700 hover:text-sky-900 font-bold underline text-[11px]"
                         >
-                          Mở bot @japancsvcbot ↗
+                          Mở bot @hotrogiangday_bot ↗
                         </a>
                       </div>
                       <p className="text-[10px] text-sky-800 leading-relaxed">
-                        1. Nhấn vào liên kết trên hoặc tìm <b>@japancsvcbot</b> trong Telegram, gửi lệnh <code>/start</code> hoặc <code>hello</code>.<br/>
+                        1. Nhấn vào liên kết trên hoặc tìm <b>@hotrogiangday_bot</b> trong Telegram, gửi lệnh <code>/start</code> hoặc <code>hello</code>.<br/>
                         2. Nhấn nút <b>"🔍 Tự động quét Chat ID"</b> để hệ thống nhận diện và tự động lưu vào cơ sở dữ liệu chung.<br/>
                         3. Bấm <b>"🚀 Gửi thử"</b> để kiểm tra tin nhắn cảnh báo đến Telegram ngay lập tức!
                       </p>
@@ -1831,7 +1839,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                           type="text"
                           value={telegramBotToken}
                           onChange={(e) => setTelegramBotToken(e.target.value)}
-                          placeholder="8715568190:AAEKFL-..."
+                          placeholder="8611136413:AAHYvr_pXy..."
                           className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white text-slate-800 focus:outline-none focus:border-sky-500 font-mono shadow-sm"
                         />
                       </div>
@@ -1859,7 +1867,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                                 }, { merge: true });
                                 localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', telegramBotToken.trim());
                                 localStorage.setItem('DUE_TELEGRAM_CHAT_ID', telegramChatId.trim());
-                                alert('Đã lưu và đồng bộ cấu hình Telegram Bot (@japancsvcbot) thành công!');
+                                alert('Đã lưu và đồng bộ cấu hình Telegram Bot (@hotrogiangday_bot) thành công!');
                               } catch (err) {
                                 console.error('Error saving telegram config:', err);
                                 alert('Lỗi: Không thể lưu cấu hình lên cơ sở dữ liệu.');
@@ -1927,7 +1935,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                           {resettingWebhook ? 'Đang reset...' : '🔄 Reset Webhook'}
                         </button>
                         <span className="text-[10px] text-slate-500">
-                          Bot: <strong className="text-sky-700">@japancsvcbot</strong>
+                          Bot: <strong className="text-sky-700">@hotrogiangday_bot</strong>
                         </span>
                       </div>
                       <button
@@ -1936,7 +1944,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                         disabled={telegramTesting || !telegramBotToken.trim() || !telegramChatId.trim()}
                         className="rounded-xl bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
                       >
-                        {telegramTesting ? 'Đang gửi...' : '🚀 Gửi thử tới @japancsvcbot'}
+                        {telegramTesting ? 'Đang gửi...' : '🚀 Gửi thử tới @hotrogiangday_bot'}
                       </button>
                     </div>
 
@@ -1983,7 +1991,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                   <span className={`h-2.5 w-2.5 rounded-full ${telegramChatId ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
                   <span className="text-slate-700 font-medium">
                     {telegramChatId ? (
-                      <>Kênh Telegram: <b className="text-emerald-700">@japancsvcbot đã kết nối</b> (Mọi báo cáo sự cố gửi đi sẽ thông báo tới kỹ thuật viên ngay)</>
+                      <>Kênh Telegram: <b className="text-emerald-700">@hotrogiangday_bot đã kết nối</b> (Mọi báo cáo sự cố gửi đi sẽ thông báo tới kỹ thuật viên ngay)</>
                     ) : (
                       <>Kênh Telegram: <span className="text-amber-700">Chưa thiết lập Chat ID</span> (Quản trị viên cần kết nối để nhận tin Telegram)</>
                     )}
@@ -2131,7 +2139,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
 
                 <div className="rounded-xl bg-rose-50/50 p-3 border border-rose-100 flex items-center gap-2 text-rose-900 text-[11px] leading-relaxed">
                   <Zap className="h-4 w-4 text-rose-600 shrink-0 animate-pulse" />
-                  <span>Cảnh báo sự cố này sẽ được chuyển ngay đến bộ phận kỹ thuật qua Telegram Bot (@japancsvcbot)!</span>
+                  <span>Cảnh báo sự cố này sẽ được chuyển ngay đến bộ phận kỹ thuật qua Telegram Bot (@hotrogiangday_bot)!</span>
                 </div>
 
                 <button
@@ -2286,7 +2294,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
 
                 <div className="rounded-xl bg-amber-50 p-3 border border-amber-150 flex items-center gap-2 text-amber-900 text-[11px] leading-relaxed">
                   <Zap className="h-4 w-4 text-amber-600 shrink-0 animate-pulse" />
-                  <span>Báo cáo sự cố thiết bị phòng học sẽ được gửi thông báo tức thì đến bộ phận kỹ thuật qua Telegram Bot (@japancsvcbot)!</span>
+                  <span>Báo cáo sự cố thiết bị phòng học sẽ được gửi thông báo tức thì đến bộ phận kỹ thuật qua Telegram Bot (@hotrogiangday_bot)!</span>
                 </div>
 
                 <button
