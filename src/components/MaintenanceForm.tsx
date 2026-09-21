@@ -582,11 +582,11 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
               <div class="room-badge">PHÒNG: \${selectedAdminRoom}</div>
             </div>
             <div class="instructions">
-              <strong>Hướng dẫn dành cho giảng viên/sinh viên:</strong><br/>
-              1. Sử dụng Camera điện thoại hoặc tính năng Quét QR trên hệ thống DUE.<br/>
-              2. Quét mã QR này để tự động nhận dạng vị trí <strong>Phòng \${selectedAdminRoom}</strong>.<br/>
-              3. Chọn chính xác thiết bị đang gặp sự cố trong phòng và ghi nhận mô tả lỗi.<br/>
-              4. Nhấn <strong>Gửi báo cáo</strong>, kỹ thuật viên sẽ nhận được thông báo ngay lập tức!
+              <strong>Hướng dẫn & Danh mục thiết bị phòng học:</strong><br/>
+              1. Quét mã QR tại phòng <strong>\${selectedAdminRoom}</strong> để báo hỏng nhanh.<br/>
+              2. Các loại thiết bị hỗ trợ: <strong>Máy chiếu, Dây cáp HDMI, Dây VGA, Thiết bị điện, Điều hoà, Âm thanh, Bàn ghế</strong>.<br/>
+              3. Chọn thiết bị/loại thiết bị gặp sự cố, nhập mô tả và gửi báo cáo.<br/>
+              4. Bộ phận kỹ thuật sẽ nhận được thông báo tức thì qua Telegram / Discord!
             </div>
           </div>
           <script>
@@ -2197,15 +2197,13 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                       className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs bg-white text-slate-800 shadow-sm cursor-pointer focus:outline-none focus:border-rose-500 transition font-semibold"
                     >
                       <option value="">-- Chọn loại thiết bị phòng học --</option>
-                      <option value="Máy chiếu (Projector)">Máy chiếu (Projector)</option>
-                      <option value="Điều hòa nhiệt độ">Điều hòa nhiệt độ</option>
-                      <option value="Micro không dây">Micro không dây</option>
-                      <option value="Hệ thống Âm thanh (Amply/Loa)">Hệ thống Âm thanh (Amply/Loa)</option>
-                      <option value="Tivi / Màn hình lớn">Tivi / Màn hình lớn</option>
-                      <option value="Bảng tương tác thông minh">Bảng tương tác thông minh</option>
-                      <option value="Máy tính giảng viên (PC)">Máy tính giảng viên (PC)</option>
-                      <option value="Thiết bị Mạng / Wifi">Thiết bị Mạng / Wifi</option>
-                      <option value="Hệ thống Điện / Quạt / Đèn">Hệ thống Điện / Quạt / Đèn</option>
+                      <option value="Máy chiếu">1. Máy chiếu</option>
+                      <option value="Dây cáp HDMI">2. Dây cáp HDMI</option>
+                      <option value="Dây VGA">3. Dây VGA</option>
+                      <option value="Thiết bị điện">4. Thiết bị điện</option>
+                      <option value="Điều hoà">5. Điều hoà</option>
+                      <option value="Âm thanh">6. Âm thanh</option>
+                      <option value="Bàn ghế">7. Bàn ghế</option>
                       <option value="Khác">Khác (Tự nhập tên thiết bị...)</option>
                     </select>
 
@@ -2453,16 +2451,28 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                         </span>
                       </div>
 
-                      <div className="w-full space-y-1.5 text-[11px] text-slate-700 bg-white p-3 rounded-xl border border-slate-150">
-                        <div className="border-b border-dashed border-slate-200 pb-1.5 mb-1.5 text-center text-xs font-bold text-slate-800">
-                          Các thiết bị sẽ hiển thị khi quét:
+                      <div className="w-full space-y-2 text-[11px] text-slate-700 bg-white p-3 rounded-xl border border-slate-200">
+                        <div className="border-b border-dashed border-slate-200 pb-1.5 text-center text-xs font-bold text-slate-800">
+                          Danh mục thiết bị khi quét QR phòng:
                         </div>
-                        <div className="max-h-[120px] overflow-y-auto space-y-1">
+                        <div className="grid grid-cols-1 gap-1 text-[10px] bg-slate-50 p-2 rounded-lg border border-slate-100 text-slate-600 font-semibold">
+                          <div>1. Máy chiếu</div>
+                          <div>2. Dây cáp HDMI</div>
+                          <div>3. Dây VGA</div>
+                          <div>4. Thiết bị điện</div>
+                          <div>5. Điều hoà</div>
+                          <div>6. Âm thanh</div>
+                          <div>7. Bàn ghế</div>
+                        </div>
+                        <div className="text-[10px] font-bold text-indigo-700 pt-1 border-t border-slate-100">
+                          + Thiết bị riêng trong phòng ({devices.filter(d => d.location.room === selectedAdminRoom).length}):
+                        </div>
+                        <div className="max-h-[80px] overflow-y-auto space-y-1">
                           {devices
                             .filter(d => d.location.room === selectedAdminRoom)
                             .map((dev, idx) => (
                               <p key={dev.id} className="truncate font-medium text-slate-600">
-                                {idx + 1}. <span className="font-bold text-slate-800">{dev.name}</span> <span className="text-[10px] font-mono bg-slate-100 px-1 rounded text-slate-500">[{dev.serialNumber}]</span>
+                                • <span className="font-bold text-slate-800">{dev.name}</span> <span className="text-[9px] font-mono bg-slate-100 px-1 rounded text-slate-500">[{dev.serialNumber}]</span>
                               </p>
                             ))}
                         </div>
