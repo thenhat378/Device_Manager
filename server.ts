@@ -771,12 +771,33 @@ QUAN TRỌNG: Chỉ trả về JSON duy nhất, không kèm markdown \`\`\`json\
         const recentHistory = (history || []).slice(-6).map((h: any) => `${h.sender === 'user' ? 'Người dùng' : 'Trợ lý'}: ${h.text}`).join('\n');
         const userPrompt = `${recentHistory ? `Lịch sử hội thoại:\n${recentHistory}\n\n` : ''}Tin nhắn mới của người dùng: "${message}"`;
 
-        const aiResponse = await aiClient.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: `${systemPrompt}\n\n${userPrompt}`
-        });
+        // Run with timeout (6 seconds) to prevent gateway timeout
+        const callGeminiWithTimeout = async (modelName: string) => {
+          const timeoutPromise = new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error(`Timeout model ${modelName}`)), 6000)
+          );
+          const aiPromise = aiClient.models.generateContent({
+            model: modelName,
+            contents: `${systemPrompt}\n\n${userPrompt}`
+          });
+          return await Promise.race([aiPromise, timeoutPromise]);
+        };
 
-        let responseText = aiResponse.text || '';
+        let aiResponse: any = null;
+        try {
+          // gemini-3.1-flash-lite is fastest and avoids 503 high demand spikes
+          aiResponse = await callGeminiWithTimeout('gemini-3.1-flash-lite');
+        } catch (err1: any) {
+          console.warn('gemini-3.1-flash-lite failed or timed out, trying gemini-3.8-flash:', err1.message);
+          try {
+            aiResponse = await callGeminiWithTimeout('gemini-3.8-flash');
+          } catch (err2: any) {
+            console.warn('gemini-3.8-flash also failed, using smart fallback:', err2.message);
+            return res.json(generateFallbackResponse(message));
+          }
+        }
+
+        let responseText = aiResponse?.text || '';
         responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
 
         try {
@@ -791,7 +812,10 @@ QUAN TRỌNG: Chỉ trả về JSON duy nhất, không kèm markdown \`\`\`json\
       }
     } catch (err: any) {
       console.error('Error in chat assistant endpoint:', err);
-      res.status(500).json({ error: 'Lỗi xử lý yêu cầu trò chuyện' });
+      // Guarantee 200 response with smart fallback so client never gets an error
+      return res.json({
+        reply: `Xin chào! Tôi là Trợ lý AI CSVC DUE. Tôi có thể hỗ trợ bạn kiểm tra máy chiếu, cáp HDMI, âm thanh micro hoặc tạo phiếu báo hỏng gửi Telegram tới kỹ thuật viên. Bạn vui lòng mô tả phòng học và thiết bị cần hỗ trợ nhé!`
+      });
     }
   });
 
