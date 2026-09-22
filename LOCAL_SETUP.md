@@ -1,6 +1,6 @@
 # HƯỚNG DẪN CHẠY CỤC BỘ (LOCAL SETUP) - HỆ THỐNG QUẢN TRỊ THIẾT BỊ DUE & n8n
 
-Hướng dẫn này giúp bạn chạy đồng thời **Hệ thống Quản trị Thiết bị DUE** và **n8n Workflow** (tích hợp Telegram Bot **@japancsvcbot**) trên máy tính cá nhân.
+Hướng dẫn này giúp bạn chạy đồng thời **Hệ thống Quản trị Thiết bị DUE** và **n8n Workflow** (tích hợp Telegram Bot **@hotrogiangday_bot**) trên máy tính cá nhân.
 
 ---
 
@@ -51,15 +51,15 @@ Nếu máy bạn đã cài sẵn Node.js và muốn chạy n8n trực tiếp tr�
 
 ---
 
-### Cấu Hình Tích Hợp n8n với Telegram Bot `@japancsvcbot`
+### Cấu Hình Tích Hợp n8n với Telegram Bot `@hotrogiangday_bot`
 
 1. **Tải File Template n8n:**
    - Vào tab **Tích Hợp n8n Workflow** trên ứng dụng quản trị (`http://localhost:3000`).
    - Bấm nút tải xuống file JSON template n8n.
 2. **Import vào n8n:**
    - Truy cập `http://localhost:5678`, chọn **Import from File** và chọn file JSON vừa tải.
-3. **Cấu hình Telegram Bot `@japancsvcbot`:**
-   - Lấy Bot Token của `@japancsvcbot` từ `@BotFather` trên Telegram.
+3. **Cấu hình Telegram Bot `@hotrogiangday_bot`:**
+   - Lấy Bot Token của `@hotrogiangday_bot` (`8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI`) từ `@BotFather` trên Telegram.
    - Thêm vào Node Telegram trong n8n.
    - Điền Chat ID của nhóm Kỹ thuật / Cơ sở vật chất.
    - Webhook URL nhận sự cố từ App sẽ là: `http://localhost:3000/api/n8n/webhook` (hoặc domain ngrok khi chạy thử nghiệm ngoài mạng LAN).

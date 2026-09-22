@@ -695,7 +695,7 @@ do_khan_cap: "Chưa xác định"`;
   app.post('/api/telegram/send', async (req, res) => {
     try {
       const { token, chatId, message, incident } = req.body;
-      const targetToken = token || process.env.TELEGRAM_BOT_TOKEN || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8';
+      const targetToken = token || process.env.TELEGRAM_BOT_TOKEN || '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI';
       const targetChatId = chatId || process.env.TELEGRAM_CHAT_ID;
 
       if (!targetToken) {
@@ -758,7 +758,7 @@ do_khan_cap: "Chưa xác định"`;
   app.post('/api/telegram/get-updates', async (req, res) => {
     try {
       const { token } = req.body;
-      const targetToken = token || process.env.TELEGRAM_BOT_TOKEN || '8715568190:AAEKFL-s06KAuNDVldDB0eyVLhrEcrSVgV8';
+      const targetToken = token || process.env.TELEGRAM_BOT_TOKEN || '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI';
 
       if (!targetToken) {
         return res.status(400).json({ error: 'Chưa cung cấp Telegram Bot Token' });
