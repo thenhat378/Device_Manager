@@ -1088,6 +1088,63 @@ do_khan_cap: "Chưa xác định"`;
     }
   });
 
+  // Direct LLM Transformer API Chat Endpoint (Gemini API via Server)
+  app.post('/api/chat', async (req, res) => {
+    try {
+      const userMessage = req.body.message || req.body.prompt;
+      if (!userMessage || typeof userMessage !== 'string') {
+        return res.status(400).json({ error: 'Nội dung tin nhắn không hợp lệ (cần truyền trường message hoặc prompt)' });
+      }
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.json({ 
+          reply: `Xin chào! Tôi là Trợ lý Ảo AI Quản lý Cơ sở vật chất DUE. Do hệ thống đang ở chế độ cục bộ không có GEMINI_API_KEY, bạn vui lòng cấu hình API Key trong Settings để kích hoạt đầy đủ sức mạnh của mô hình ngôn ngữ lớn.` 
+        });
+      }
+
+      const aiClient = new GoogleGenAI({
+        apiKey: apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build'
+          }
+        }
+      });
+
+      const systemInstruction = `Bạn là Trợ lý Ảo AI Thông minh của Hệ thống Quản lý Thiết bị & Cơ sở vật chất Trường Đại học Kinh tế - Đại học Đà Nẵng (DUE).
+Nhiệm vụ của bạn là giải đáp, tư vấn, hướng dẫn xử lý sự cố thiết bị giảng đường (máy chiếu, cáp HDMI, VGA, micro, âm thanh, điều hoà, hệ thống điện, bàn ghế) bằng phong cách lịch sự, chuẩn mực môi trường đại học và đưa ra các bước xử lý súc tích, dễ thực hiện.
+Hotline Kỹ thuật CSVC DUE: 0987119665.`;
+
+      let response;
+      try {
+        response = await aiClient.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: userMessage,
+          config: {
+            systemInstruction: systemInstruction,
+            temperature: 0.7
+          }
+        });
+      } catch (flashErr) {
+        // Fallback to flash-lite if high load
+        response = await aiClient.models.generateContent({
+          model: 'gemini-3.1-flash-lite',
+          contents: userMessage,
+          config: {
+            systemInstruction: systemInstruction,
+            temperature: 0.7
+          }
+        });
+      }
+
+      res.json({ reply: response.text || '' });
+    } catch (error: any) {
+      console.error("Lỗi AI Chatbot:", error);
+      res.status(500).json({ reply: "Xin lỗi, hệ thống AI đang gặp sự cố kết nối hoặc máy chủ phản hồi quá tải. Vui lòng thử lại sau giây lát." });
+    }
+  });
+
   // AI Chatbot Assistant for User Accounts
   app.post('/api/chat/assistant', async (req, res) => {
     try {
