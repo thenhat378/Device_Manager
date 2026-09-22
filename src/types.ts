@@ -88,12 +88,6 @@ export interface IncidentReport {
   reportedAt: string;
   resolvedAt?: string;
   resolutionNotes?: string;
-  acceptedBy?: string;
-  acceptedAt?: string;
-  acceptanceNotes?: string;
-  responderName?: string;
-  telegramBot?: string;
-  telegramSent?: boolean;
 }
 
 
@@ -107,7 +101,6 @@ export interface ToastMessage {
   type: ToastType;
   timestamp: string;
   deviceSn?: string;
-  onClick?: () => void;
 }
 
 export type DeviceTransferType = 'transfer' | 'recall';

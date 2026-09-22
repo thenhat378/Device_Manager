@@ -43,9 +43,6 @@ import { QRGeneratorModal } from './components/QRGeneratorModal';
 import { BatchQRPrintModal } from './components/BatchQRPrintModal';
 import { ToastContainer } from './components/ToastContainer';
 import { AdminProfileModal } from './components/AdminProfileModal';
-import { QuickChatbot } from './components/QuickChatbot';
-import { TelegramConfigModal } from './components/TelegramConfigModal';
-import { StaffChatbotPortal } from './components/StaffChatbotPortal';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -59,7 +56,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'devices' | 'maintenance' | 'transfers' | 'analytics' | 'users' | 'inventory'>('devices');
   const [isAdminProfileOpen, setIsAdminProfileOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
 
   useEffect(() => {
     if (currentUser) {
@@ -96,18 +92,6 @@ export default function App() {
   const [selectedQRDevice, setSelectedQRDevice] = useState<Device | null>(null);
 
   const [isBatchQRPrintOpen, setIsBatchQRPrintOpen] = useState(false);
-
-  // Telegram Integration State
-  const [telegramChatId, setTelegramChatId] = useState<string>(() => localStorage.getItem('DUE_TELEGRAM_CHAT_ID') || '');
-  const [telegramBotToken, setTelegramBotToken] = useState<string>(() => {
-    const saved = localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN');
-    if (!saved || saved.includes('8715568190')) {
-      localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI');
-      return '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI';
-    }
-    return saved;
-  });
-  const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
 
   // PWA Install Prompt State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -172,8 +156,7 @@ export default function App() {
     title: string, 
     message: string, 
     type: ToastType = 'info', 
-    deviceSn?: string,
-    onClick?: () => void
+    deviceSn?: string
   ) => {
     const newToast: ToastMessage = {
       id: 'toast-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
@@ -181,15 +164,14 @@ export default function App() {
       message,
       type,
       timestamp: new Date().toISOString(),
-      deviceSn,
-      onClick
+      deviceSn
     };
     setToasts(prev => [newToast, ...prev].slice(0, 6));
 
-    // Auto clear toast after 5s (or 8s if actionable)
+    // Auto clear toast after 5s
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== newToast.id));
-    }, onClick ? 8000 : 5000);
+    }, 5000);
   };
 
   const handleDismissToast = (id: string) => {
@@ -231,7 +213,7 @@ export default function App() {
     if (!currentUser) return;
 
     const unsubDevices = onSnapshot(collection(db, 'devices'), 
-      (snapshot) => setDevices(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Device)).filter(d => d.id !== '_settings')),
+      (snapshot) => setDevices(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Device))),
       (error) => handleFirestoreError(error, OperationType.LIST, 'devices')
     );
     const unsubInspections = onSnapshot(collection(db, 'inspections'), 
@@ -302,28 +284,6 @@ export default function App() {
       (snapshot) => setInventories(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as DeviceInventoryRecord))),
       (error) => handleFirestoreError(error, OperationType.LIST, 'inventories')
     );
-
-    // Sync app_config (Telegram settings) across all sessions in real-time
-    const unsubConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        if (data?.telegramChatId) {
-          setTelegramChatId(data.telegramChatId);
-          localStorage.setItem('DUE_TELEGRAM_CHAT_ID', data.telegramChatId);
-        }
-        if (data?.telegramBotToken) {
-          if (data.telegramBotToken.includes('8715568190')) {
-            setTelegramBotToken('8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI');
-            localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI');
-          } else {
-            setTelegramBotToken(data.telegramBotToken);
-            localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', data.telegramBotToken);
-          }
-        }
-      }
-    }, (error) => {
-      console.warn('App config sync:', error);
-    });
     
     return () => {
       unsubDevices();
@@ -332,7 +292,6 @@ export default function App() {
       unsubIncidents();
       unsubTransfers();
       unsubInventories();
-      unsubConfig();
     };
   }, [currentUser]);
 
@@ -636,8 +595,9 @@ export default function App() {
          await updateDoc(doc(db, 'devices', dev.id), { status: 'damaged', updatedAt: new Date().toISOString() });
       }
 
-      // Send Notifications exclusively to Telegram Bot @hotrogiangday_bot
-      await sendTelegramAlert(newReport, 'new');
+      // Send Discord Webhook Alert
+      await sendDiscordAlert(newReport, 'new');
+      await sendN8nAlert(newReport, 'accepted', 'Báo cáo sự cố mới'); // Or maybe 'created' eventType if it supported it. The backend currently doesn't check eventType, it's just forwarded.
 
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'incidents');
@@ -651,58 +611,52 @@ export default function App() {
       .replace(/>/g, '&gt;');
   };
 
-  const sendTelegramAlert = async (incident: any, eventType: 'new' | 'accepted' | 'resolved', resolutionNotes?: string) => {
-    const rawToken = telegramBotToken || localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN');
-    const token = (!rawToken || rawToken.includes('8715568190')) ? '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI' : rawToken;
-    const chatId = telegramChatId || localStorage.getItem('DUE_TELEGRAM_CHAT_ID');
+  const sendDiscordAlert = async (incident: any, eventType: 'new' | 'accepted' | 'resolved', resolutionNotes?: string) => {
+    const webhookUrl = localStorage.getItem('DUE_DISCORD_WEBHOOK_URL') || 'https://discordapp.com/api/webhooks/1536963623295909888/GeJsvcz_wBp13avyIy_BKEq2M_brDAkDKtvbEOvRJzYxMyVVKNRvzpC55in9EYhgr7U-';
 
     try {
-      const res = await fetch('/api/telegram/send', {
+      await fetch('/api/discord/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          token,
-          chatId: chatId || undefined,
-          incident,
+          webhookUrl,
+          faultData: {
+            room: incident.room || 'Phòng học',
+            deviceName: incident.deviceName || 'Thiết bị',
+            sn: incident.deviceSn || 'Không rõ SN',
+            reporter: currentUser?.name || incident.reporterName || 'Cán bộ báo cáo',
+            description: incident.description || 'Không có mô tả chi tiết'
+          },
           eventType,
-          resolutionNotes,
-          updatedBy: currentUser?.name || 'Cán Bộ Kỹ Thuật'
+          resolutionNotes
         })
       });
+    } catch (err) {
+      console.error('Error sending Discord alert from frontend:', err);
+    }
+  };
 
-      const resData = await res.json();
-      if (!res.ok) {
-        const errMsg = resData.error || '';
-        if (resData.noChatId || !chatId || errMsg.includes('chat not found') || errMsg.includes('chat_id is empty') || errMsg.includes('Bad Request')) {
-          addToast(
-            'Lưu Sự Cố Thành Công',
-            'Sự cố đã được ghi nhận vào hệ thống. Nhấn vào đây để kết nối nhận thông báo tự động qua bot Telegram @hotrogiangday_bot.',
-            'info',
-            incident?.deviceSn,
-            () => setIsTelegramModalOpen(true)
-          );
-        } else {
-          addToast(
-            'Đã Tiếp Nhận Phiếu Sự Cố',
-            `Phiếu đã lưu thành công. (Thông báo Telegram: ${errMsg})`,
-            'info',
-            incident?.deviceSn,
-            () => setIsTelegramModalOpen(true)
-          );
-        }
-        return false;
-      } else {
-        addToast(
-          '🚀 Đã Phát Tin Tới Telegram',
-          `Cảnh báo sự cố đã gửi tới bot @hotrogiangday_bot thành công (Chat ID: ${resData.sentToChatId || chatId})!`,
-          'success',
-          incident?.deviceSn
-        );
-        return true;
-      }
-    } catch (err: any) {
-      console.error('Error sending Telegram alert from frontend:', err);
-      return false;
+  const sendN8nAlert = async (incident: any, eventType: 'accepted' | 'resolved', resolutionNotes?: string) => {
+    const webhookUrl = localStorage.getItem('DUE_N8N_WEBHOOK_URL');
+    if (!webhookUrl) return;
+
+    try {
+      await fetch('/api/n8n/trigger-telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          webhookUrl,
+          incident: {
+            ...incident,
+            eventType,
+            resolutionNotes,
+            updatedBy: currentUser?.name || 'Cán Bộ Kỹ Thuật',
+            updatedAt: new Date().toISOString()
+          }
+        })
+      });
+    } catch (err) {
+      console.error('Error sending n8n alert from frontend:', err);
     }
   };
 
@@ -721,38 +675,36 @@ export default function App() {
         }
       }
 
-      // Send Notifications exclusively to Telegram Bot @hotrogiangday_bot
-      await sendTelegramAlert(inc, 'resolved', resolutionNotes);
+      // Send Discord Webhook Alert
+      await sendDiscordAlert(inc, 'resolved', resolutionNotes);
+      await sendN8nAlert(inc, 'resolved', resolutionNotes);
     }
 
     try {
       await updateDoc(doc(db, 'incidents', incidentId), { 
         status: 'resolved', 
         resolvedAt: new Date().toISOString(), 
-        resolutionNotes,
-        responderName: currentUser?.name || 'Kỹ thuật viên CSVC'
+        resolutionNotes 
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `incidents/${incidentId}`);
     }
   };
 
-  const handleAcceptIncident = async (incidentId: string, acceptanceNotes?: string) => {
+  const handleAcceptIncident = async (incidentId: string) => {
     const inc = incidents.find(i => i.id === incidentId);
     
     if (inc) {
       addToast('Đã Tiếp Nhận Sự Cố', `Sự cố của ${inc.deviceName} (${inc.deviceSn}) đã được tiếp nhận để xử lý.`, 'info', inc.deviceSn);
       
-      // Send Notifications exclusively to Telegram Bot @hotrogiangday_bot
-      await sendTelegramAlert(inc, 'accepted', acceptanceNotes);
+      // Send Discord Webhook Alert
+      await sendDiscordAlert(inc, 'accepted');
+      await sendN8nAlert(inc, 'accepted');
     }
 
     try {
       await updateDoc(doc(db, 'incidents', incidentId), { 
-        status: 'in_progress',
-        acceptedBy: currentUser?.name || 'Kỹ thuật viên CSVC',
-        acceptedAt: new Date().toISOString(),
-        acceptanceNotes: acceptanceNotes || 'Đã tiếp nhận yêu cầu và đang phân công xử lý.'
+        status: 'in_progress'
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `incidents/${incidentId}`);
@@ -794,41 +746,14 @@ export default function App() {
         onInstallApp={handleInstallApp}
         onOpenQuickScan={() => handleOpenScannerWithCallback((scannedValue) => {
           let sn = scannedValue.trim();
-
-          // Try parsing as URL first in case QR contains full link
-          if (sn.startsWith('http://') || sn.startsWith('https://')) {
-            try {
-              const url = new URL(sn);
-              const snParam = url.searchParams.get('sn') || url.searchParams.get('serialNumber');
-              const roomParam = url.searchParams.get('room') || url.searchParams.get('roomName');
-              const idParam = url.searchParams.get('id') || url.searchParams.get('deviceId');
-              if (snParam) {
-                sn = snParam;
-              } else if (roomParam) {
-                sn = `ROOM:${roomParam}`;
-              } else if (idParam) {
-                sn = idParam;
-              }
-            } catch (urlErr) {
-              console.warn('Failed to parse scanned URL:', urlErr);
-            }
-          }
-
           try {
             const parsed = JSON.parse(scannedValue);
-            if (parsed) {
-              if (parsed.type === 'room' && parsed.room) {
-                sn = `ROOM:${parsed.room}`;
-              } else if (parsed.room) {
-                sn = `ROOM:${parsed.room}`;
-              } else if (parsed.sn) {
-                sn = parsed.sn;
-              }
+            if (parsed && parsed.sn) {
+              sn = parsed.sn;
             }
           } catch (e) {
             // Not a JSON string
           }
-
           const dev = devices.find(d => d.serialNumber.toLowerCase() === sn.toLowerCase() || d.id === sn);
           if (dev) {
             setSelectedInventoryDevice(dev);
@@ -840,23 +765,8 @@ export default function App() {
               dev.serialNumber
             );
           } else {
-            // Check if it's a room code
-            const isRoomPrefix = sn.toUpperCase().startsWith('ROOM:');
-            const matchedRoom = isRoomPrefix ? sn.substring(5).trim() : sn;
-            const normRoom = matchedRoom.toLowerCase().replace(/^(phòng|phong|p\.|p)\s*/g, '').trim();
-            const hasRoomDevices = devices.some(d => d.location.room && d.location.room.toLowerCase().replace(/^(phòng|phong|p\.|p)\s*/g, '').trim() === normRoom);
-
-            if (hasRoomDevices) {
-              setActiveTab('maintenance');
-              addToast(
-                'Quét mã phòng thành công', 
-                `Đã phát hiện phòng học: "${matchedRoom}". Hãy nhấn Quét Camera trên tab Báo sự cố để chọn phòng này.`, 
-                'success'
-              );
-            } else {
-              addToast('Mã SN chưa có', `Đã quét được SN ${sn}. Bạn có thể thêm thiết bị mới.`, 'info', sn);
-              setActiveTab('devices');
-            }
+            addToast('Mã SN chưa có', `Đã quét được SN ${sn}. Bạn có thể thêm thiết bị mới.`, 'info', sn);
+            setActiveTab('devices');
           }
         })}
         toastCount={toasts.length}
@@ -864,9 +774,6 @@ export default function App() {
         onOpenAdminProfile={() => setIsAdminProfileOpen(true)}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-        onOpenChatbot={() => setIsChatbotOpen(true)}
-        telegramChatId={telegramChatId}
-        onOpenTelegramConfig={() => setIsTelegramModalOpen(true)}
       />
 
       {/* Main Container */}
@@ -886,7 +793,6 @@ export default function App() {
             isOpen={isSidebarOpen}
             setIsOpen={setIsSidebarOpen}
             onOpenAdminProfile={() => setIsAdminProfileOpen(true)}
-            onOpenChatbot={() => setIsChatbotOpen(true)}
           />
 
           {/* Main Content Area */}
@@ -911,33 +817,20 @@ export default function App() {
             )}
 
             {activeTab === 'maintenance' && (
-              currentUser?.role === 'staff' ? (
-                <StaffChatbotPortal
-                  currentUser={currentUser}
-                  devices={devices}
-                  incidents={incidents}
-                  onAddIncident={handleAddIncident}
-                  onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
-                  telegramChatId={telegramChatId}
-                  telegramBotToken={telegramBotToken}
-                  onAddToast={addToast}
-                />
-              ) : (
-                <MaintenanceForm
-                  devices={devices}
-                  inspections={inspections}
-                  replacements={replacements}
-                  incidents={incidents}
-                  currentUser={currentUser}
-                  onAddInspection={handleAddInspection}
-                  onAddReplacement={handleAddReplacement}
-                  onAddIncident={handleAddIncident}
-                  onResolveIncident={handleResolveIncident}
-                  onAcceptIncident={handleAcceptIncident}
-                  onOpenScanner={handleOpenScannerWithCallback}
-                  onReturnToDevices={() => setActiveTab('devices')}
-                />
-              )
+              <MaintenanceForm
+                devices={devices}
+                inspections={inspections}
+                replacements={replacements}
+                incidents={currentUser?.role === 'staff' ? incidents.filter(i => i.reporterName === currentUser.name) : incidents}
+                currentUser={currentUser}
+                onAddInspection={handleAddInspection}
+                onAddReplacement={handleAddReplacement}
+                onAddIncident={handleAddIncident}
+                onResolveIncident={handleResolveIncident}
+                onAcceptIncident={handleAcceptIncident}
+                onOpenScanner={handleOpenScannerWithCallback}
+                onReturnToDevices={() => setActiveTab('devices')}
+              />
             )}
 
             {activeTab === 'transfers' && (
@@ -1026,35 +919,6 @@ export default function App() {
           onAddToast={addToast}
         />
       )}
-
-      {/* Quick AI Chatbot for User Accounts */}
-      {currentUser && currentUser.role !== 'staff' && (
-        <QuickChatbot
-          currentUser={currentUser}
-          devices={devices}
-          onAddIncident={handleAddIncident}
-          isOpenExternal={isChatbotOpen}
-          onCloseExternal={() => setIsChatbotOpen(false)}
-          onOpenTelegramConfig={() => setIsTelegramModalOpen(true)}
-        />
-      )}
-
-      {/* Telegram Bot Setup Modal */}
-      <TelegramConfigModal
-        isOpen={isTelegramModalOpen}
-        onClose={() => setIsTelegramModalOpen(false)}
-        currentChatId={telegramChatId}
-        currentBotToken={telegramBotToken}
-        onSaved={(newChatId, newBotToken) => {
-          setTelegramChatId(newChatId);
-          setTelegramBotToken(newBotToken);
-          addToast(
-            '✅ Đã Kết Nối Telegram',
-            `Đã lưu Chat ID [${newChatId}] thành công. Mọi sự cố phòng học sẽ được bắn trực tiếp tới Telegram này!`,
-            'success'
-          );
-        }}
-      />
 
     </div>
   );

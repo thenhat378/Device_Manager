@@ -126,23 +126,6 @@ export const DeviceInventory: React.FC<DeviceInventoryProps> = ({
   const handleScanQR = () => {
     onOpenScanner((scannedValue) => {
       let sn = scannedValue.trim();
-
-      // Try parsing as URL first in case QR contains full link
-      if (sn.startsWith('http://') || sn.startsWith('https://')) {
-        try {
-          const url = new URL(sn);
-          const snParam = url.searchParams.get('sn') || url.searchParams.get('serialNumber');
-          const idParam = url.searchParams.get('id') || url.searchParams.get('deviceId');
-          if (snParam) {
-            sn = snParam;
-          } else if (idParam) {
-            sn = idParam;
-          }
-        } catch (urlErr) {
-          console.warn('Failed to parse scanned URL:', urlErr);
-        }
-      }
-
       try {
         const parsed = JSON.parse(scannedValue);
         if (parsed && parsed.sn) {

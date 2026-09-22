@@ -157,51 +157,14 @@ export const DeviceTransferManagement: React.FC<DeviceTransferManagementProps> =
   const currentSelectedDevice = devices.find(d => selectedDeviceIds.includes(d.id)) || devices[0];
 
   const handleScanDevice = () => {
-    onOpenScanner((scannedValue) => {
-      let val = scannedValue.trim();
-
-      // Try parsing as URL first in case QR contains full link
-      if (val.startsWith('http://') || val.startsWith('https://')) {
-        try {
-          const url = new URL(val);
-          const snParam = url.searchParams.get('sn') || url.searchParams.get('serialNumber');
-          const roomParam = url.searchParams.get('room') || url.searchParams.get('roomName');
-          const idParam = url.searchParams.get('id') || url.searchParams.get('deviceId');
-          if (snParam) {
-            val = snParam;
-          } else if (roomParam) {
-            val = `ROOM:${roomParam}`;
-          } else if (idParam) {
-            val = idParam;
-          }
-        } catch (urlErr) {
-          console.warn('Failed to parse scanned URL:', urlErr);
-        }
-      }
-
-      // Try parsing JSON payload if any
-      try {
-        const parsed = JSON.parse(scannedValue);
-        if (parsed) {
-          if (parsed.type === 'room' && parsed.room) {
-            val = `ROOM:${parsed.room}`;
-          } else if (parsed.room) {
-            val = `ROOM:${parsed.room}`;
-          } else if (parsed.sn) {
-            val = parsed.sn;
-          }
-        }
-      } catch (e) {
-        // Not a JSON payload, treat as plain text
-      }
-
-      const match = devices.find(d => d.serialNumber.toLowerCase() === val.toLowerCase() || d.id === val);
+    onOpenScanner((scannedSn) => {
+      const match = devices.find(d => d.serialNumber.toLowerCase() === scannedSn.toLowerCase() || d.id === scannedSn);
       if (match) {
         if (!selectedDeviceIds.includes(match.id)) {
           setSelectedDeviceIds(prev => [...prev, match.id]);
         }
       } else {
-        alert(`Không tìm thấy thiết bị nào có mã SN: "${val}" trong hệ thống.`);
+        alert(`Không tìm thấy thiết bị nào có mã SN: "${scannedSn}" trong hệ thống.`);
       }
     });
   };

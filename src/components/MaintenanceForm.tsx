@@ -3,8 +3,6 @@ import { QRCodeSVG } from 'qrcode.react';
 import * as XLSX from 'xlsx';
 import { Device, InspectionRecord, PartReplacementRecord, IncidentReport, User } from '../types';
 import { MaintenanceCalendar } from './MaintenanceCalendar';
-import { db } from '../lib/firebase';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { formatDate } from '../utils';
 import { 
   Wrench, 
@@ -45,14 +43,6 @@ interface MaintenanceFormProps {
   onOpenScanner: (callback: (sn: string) => void) => void;
   onReturnToDevices?: () => void;
 }
-
-const normalizeRoom = (roomName: string): string => {
-  if (!roomName) return '';
-  return roomName
-    .toLowerCase()
-    .replace(/^(phòng|phong|p\.|p)\s*/g, '')
-    .trim();
-};
 
 export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
   devices,
@@ -171,54 +161,20 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
      }
    }, [currentUser]);
 
-  // n8n Webhook & Telegram Integration State
+  // n8n Webhook & Discord Integration State
   const [n8nWebhookUrl, setN8nWebhookUrl] = useState<string>(
     localStorage.getItem('DUE_N8N_WEBHOOK_URL') || ''
   );
   const [n8nTesting, setN8nTesting] = useState(false);
   const [n8nTestResult, setN8nTestResult] = useState<string | null>(null);
 
-  // Telegram Bot (@hotrogiangday_bot) Integration State
-  const [telegramBotToken, setTelegramBotToken] = useState<string>(() => {
-    const saved = localStorage.getItem('DUE_TELEGRAM_BOT_TOKEN');
-    if (!saved || saved.includes('8715568190')) {
-      localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI');
-      return '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI';
-    }
-    return saved;
-  });
-  const [telegramChatId, setTelegramChatId] = useState<string>(
-    localStorage.getItem('DUE_TELEGRAM_CHAT_ID') || ''
+  // Discord Webhook Direct Integration State
+  const [discordWebhookUrl, setDiscordWebhookUrl] = useState<string>(
+    localStorage.getItem('DUE_DISCORD_WEBHOOK_URL') || 'https://discordapp.com/api/webhooks/1536963623295909888/GeJsvcz_wBp13avyIy_BKEq2M_brDAkDKtvbEOvRJzYxMyVVKNRvzpC55in9EYhgr7U-'
   );
-  const [telegramTesting, setTelegramTesting] = useState(false);
-  const [telegramScanning, setTelegramScanning] = useState(false);
-  const [resettingWebhook, setResettingWebhook] = useState(false);
-  const [scannedChats, setScannedChats] = useState<Array<{ id: string; name: string; type: string }>>([]);
-  const [telegramTestResult, setTelegramTestResult] = useState<string | null>(null);
-
-  const [configTab, setConfigTab] = useState<'telegram' | 'n8n' | 'device'>('telegram');
-  const [customCategory, setCustomCategory] = useState<string>('');
-
-  useEffect(() => {
-    if (!currentUser) return;
-    const unsub = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        if (data && data.telegramBotToken && !data.telegramBotToken.includes('8715568190')) {
-          setTelegramBotToken(data.telegramBotToken);
-          localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', data.telegramBotToken);
-        } else {
-          setTelegramBotToken('8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI');
-          localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', '8611136413:AAHYvr_pXyA6sjC-2SlVI0WPUcqq5K8S5iI');
-        }
-        if (data && data.telegramChatId) {
-          setTelegramChatId(data.telegramChatId);
-          localStorage.setItem('DUE_TELEGRAM_CHAT_ID', data.telegramChatId);
-        }
-      }
-    });
-    return () => unsub();
-  }, [currentUser]);
+  const [discordTesting, setDiscordTesting] = useState(false);
+  const [discordTestResult, setDiscordTestResult] = useState<string | null>(null);
+  const [configTab, setConfigTab] = useState<'discord' | 'n8n' | 'device'>('discord');
 
   // Device notification states
   const [devicePermission, setDevicePermission] = useState<NotificationPermission>(
@@ -273,7 +229,44 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
   const [resolvingIncidentId, setResolvingIncidentId] = useState<string | null>(null);
   const [resolutionNoteText, setResolutionNoteText] = useState('');
 
+  const handleTestDiscord = async () => {
+    if (!discordWebhookUrl.trim()) {
+      setDiscordTestResult('❌ Vui lòng nhập Discord Webhook URL.');
+      return;
+    }
 
+    setDiscordTesting(true);
+    setDiscordTestResult(null);
+    try {
+      localStorage.setItem('DUE_DISCORD_WEBHOOK_URL', discordWebhookUrl);
+
+      const res = await fetch('/api/discord/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          webhookUrl: discordWebhookUrl,
+          faultData: {
+            room: 'Phòng học thí nghiệm H002',
+            deviceName: 'Máy tính bảng Samsung Galaxy Tab A9',
+            sn: 'SS-TAB-A9-002',
+            reporter: currentUser?.name || 'Kỹ thuật viên thử nghiệm',
+            description: 'Tín hiệu kiểm tra kết nối hệ thống cảnh báo sự cố DUE qua Discord Webhook.'
+          },
+          eventType: 'new'
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setDiscordTestResult('✅ Đã gửi tín hiệu kiểm tra qua Discord thành công! Hãy kiểm tra kênh Discord của bạn.');
+      } else {
+        setDiscordTestResult(`⚠️ Lỗi: ${data.error || 'Gửi thất bại'}`);
+      }
+    } catch (err: any) {
+      setDiscordTestResult(`❌ Lỗi kết nối: ${err.message}`);
+    } finally {
+      setDiscordTesting(false);
+    }
+  };
 
   const handleTestN8nWebhook = async () => {
     setN8nTesting(true);
@@ -298,137 +291,11 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
     }
   };
 
-  const handleTestTelegram = async () => {
-    if (!telegramBotToken.trim() || !telegramChatId.trim()) {
-      setTelegramTestResult('❌ Vui lòng nhập đầy đủ Bot Token và Chat ID.');
-      return;
-    }
-
-    setTelegramTesting(true);
-    setTelegramTestResult(null);
-    try {
-      localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', telegramBotToken);
-      localStorage.setItem('DUE_TELEGRAM_CHAT_ID', telegramChatId);
-
-        const res = await fetch('/api/telegram/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token: telegramBotToken,
-          chatId: telegramChatId,
-          message: '🚨<b>KIỂM TRA KẾT NỐI TELEGRAM BOT (@hotrogiangday_bot)</b>\nHệ thống Quản lý Thiết bị DUE đã kết nối thành công tới bot thông báo sự cố!'
-        })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setTelegramTestResult('✅ Đã gửi tin nhắn thử nghiệm đến Telegram bot @hotrogiangday_bot thành công!');
-      } else {
-        setTelegramTestResult(`⚠️ Lỗi: ${data.error || 'Không thể gửi tin nhắn qua Telegram'}`);
-      }
-    } catch (err: any) {
-      setTelegramTestResult(`❌ Lỗi kết nối: ${err.message}`);
-    } finally {
-      setTelegramTesting(false);
-    }
-  };
-
-  const handleResetWebhook = async () => {
-    if (!telegramBotToken.trim()) return;
-    setResettingWebhook(true);
-    setTelegramTestResult(null);
-    try {
-      const res = await fetch('/api/telegram/reset-webhook', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: telegramBotToken.trim() })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setTelegramTestResult('✅ <b>Đã giải phóng kết nối Telegram thành công!</b> Bạn hãy gửi tin nhắn cho bot @hotrogiangday_bot rồi nhấn nút <b>"🔍 Tự động quét Chat ID"</b>.');
-      } else {
-        setTelegramTestResult(`⚠️ Không thể reset: ${data.error}`);
-      }
-    } catch (err: any) {
-      setTelegramTestResult(`❌ Lỗi kết nối: ${err.message}`);
-    } finally {
-      setResettingWebhook(false);
-    }
-  };
-
-  const handleScanTelegramChats = async () => {
-    if (!telegramBotToken.trim()) {
-      setTelegramTestResult('❌ Vui lòng nhập Bot Token trước.');
-      return;
-    }
-    setTelegramScanning(true);
-    setTelegramTestResult(null);
-    try {
-      const res = await fetch('/api/telegram/get-updates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: telegramBotToken.trim() })
-      });
-      
-      const rawText = await res.text();
-      let data: any = {};
-      try {
-        data = JSON.parse(rawText);
-      } catch (parseErr) {
-        throw new Error('Máy chủ đang khởi động lại hoặc không phản hồi dữ liệu hợp lệ. Vui lòng thử lại sau giây lát.');
-      }
-
-      if (res.ok && data.chats && data.chats.length > 0) {
-        setScannedChats(data.chats);
-        const firstChat = data.chats[0];
-        setTelegramChatId(firstChat.id);
-        localStorage.setItem('DUE_TELEGRAM_CHAT_ID', firstChat.id);
-
-        // Auto save to Firestore settings/app_config so it persists globally across all sessions
-        try {
-          await setDoc(doc(db, 'settings', 'app_config'), {
-            telegramBotToken: telegramBotToken.trim(),
-            telegramChatId: firstChat.id
-          }, { merge: true });
-        } catch (dbErr) {
-          console.warn('Auto save to db error:', dbErr);
-        }
-
-        setTelegramTestResult(`✅ <b>Đã quét & tự động lưu Chat ID [${firstChat.id}] (${firstChat.name || firstChat.type})!</b> Hệ thống đã kết nối trực tiếp với @hotrogiangday_bot.`);
-      } else {
-        const msg = data.error || '⚠️ Không tìm thấy tin nhắn mới. Hãy chắc chắn bạn đã gửi ít nhất 1 tin nhắn (ví dụ: /start) tới bot @hotrogiangday_bot trên Telegram rồi nhấn lại nút quét.';
-        setTelegramTestResult(msg);
-      }
-    } catch (err: any) {
-      setTelegramTestResult(`❌ ${err.message || 'Lỗi kết nối tới Telegram'}`);
-    } finally {
-      setTelegramScanning(false);
-    }
-  };
-
   // Camera QR Auto Select Device Helper
   const handleScanDeviceForTab = (tab: 'inspection' | 'replacement' | 'incident') => {
     onOpenScanner((scannedValue) => {
       let val = scannedValue.trim();
       
-      // Try parsing as URL first in case QR contains full link
-      if (val.startsWith('http://') || val.startsWith('https://')) {
-        try {
-          const url = new URL(val);
-          const snParam = url.searchParams.get('sn') || url.searchParams.get('serialNumber');
-          const roomParam = url.searchParams.get('room') || url.searchParams.get('roomName');
-          const idParam = url.searchParams.get('id') || url.searchParams.get('deviceId');
-          if (snParam) {
-            val = snParam;
-          } else if (roomParam) {
-            val = `ROOM:${roomParam}`;
-          } else if (idParam) {
-            val = idParam;
-          }
-        } catch (urlErr) {
-          console.warn('Failed to parse scanned URL:', urlErr);
-        }
-      }
-
       // Try parsing JSON payload if any
       try {
         const parsed = JSON.parse(scannedValue);
@@ -445,76 +312,62 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
         // Not a JSON payload, treat as plain text
       }
 
-      // 1. Direct SN/ID match prioritization
-      const foundDevice = devices.find(d => d.serialNumber.toLowerCase() === val.toLowerCase() || d.id === val);
-      if (foundDevice) {
+      // Check if it's a ROOM code
+      const isRoomPrefix = val.toUpperCase().startsWith('ROOM:');
+      const matchedRoom = isRoomPrefix ? val.substring(5).trim() : val;
+      const isRoomCode = isRoomPrefix || devices.some(d => d.location.room.toLowerCase() === matchedRoom.toLowerCase());
+
+      if (tab === 'incident' && isRoomCode) {
+        const devicesInRoom = devices.filter(d => d.location.room.toLowerCase() === matchedRoom.toLowerCase());
+        if (devicesInRoom.length > 0) {
+          setScannedRoom(devicesInRoom[0].location.room);
+          setIncidentForm(prev => ({
+            ...prev,
+            deviceId: '',
+            deviceSn: '',
+            deviceName: '',
+            room: devicesInRoom[0].location.room,
+            faculty: devicesInRoom[0].location.faculty
+          }));
+          return;
+        } else {
+          alert(`Phòng "${matchedRoom}" chưa có thiết bị nào khai báo trên hệ thống.`);
+          return;
+        }
+      }
+
+      // Default SN Scan
+      let sn = val;
+      const found = devices.find(d => d.serialNumber.toLowerCase() === sn.toLowerCase() || d.id === sn);
+      if (found) {
         if (tab === 'inspection') {
           setInspectionForm(prev => ({
             ...prev,
-            deviceId: foundDevice.id,
-            deviceSn: foundDevice.serialNumber,
-            deviceName: foundDevice.name
+            deviceId: found.id,
+            deviceSn: found.serialNumber,
+            deviceName: found.name
           }));
         } else if (tab === 'replacement') {
           setReplacementForm(prev => ({
             ...prev,
-            deviceId: foundDevice.id,
-            deviceSn: foundDevice.serialNumber,
-            deviceName: foundDevice.name
+            deviceId: found.id,
+            deviceSn: found.serialNumber,
+            deviceName: found.name
           }));
         } else if (tab === 'incident') {
           setScannedRoom(null);
           setIncidentForm(prev => ({
             ...prev,
-            deviceId: foundDevice.id,
-            deviceSn: foundDevice.serialNumber,
-            deviceName: foundDevice.name,
-            faculty: foundDevice.location.faculty,
-            room: foundDevice.location.room
+            deviceId: found.id,
+            deviceSn: found.serialNumber,
+            deviceName: found.name,
+            faculty: found.location.faculty,
+            room: found.location.room
           }));
         }
-        return;
+      } else {
+        alert(`Không tìm thấy thiết bị hay phòng nào tương ứng với mã: "${sn}". Vui lòng kiểm tra lại.`);
       }
-
-      // 2. Room match fallback (mainly for incident tab)
-      const isRoomPrefix = val.toUpperCase().startsWith('ROOM:');
-      const matchedRoom = isRoomPrefix ? val.substring(5).trim() : val;
-      const normalizedQueryRoom = normalizeRoom(matchedRoom);
-
-      const isRoomCode = isRoomPrefix || devices.some(d => d.location.room && normalizeRoom(d.location.room) === normalizedQueryRoom);
-
-      if (tab === 'incident' && isRoomCode) {
-        const devicesInRoom = devices.filter(d => d.location.room && normalizeRoom(d.location.room) === normalizedQueryRoom);
-        if (devicesInRoom.length > 0) {
-          // Use the exact room name stored in devices to maintain consistency
-          const canonicalRoomName = devicesInRoom[0].location.room;
-          setScannedRoom(canonicalRoomName);
-          setIncidentForm(prev => ({
-            ...prev,
-            deviceId: '',
-            deviceSn: '',
-            deviceName: '',
-            room: canonicalRoomName,
-            faculty: devicesInRoom[0].location.faculty
-          }));
-          return;
-        } else {
-          // If no devices are in this room, set the scannedRoom to matchedRoom anyway, so the user knows they scanned a room!
-          setScannedRoom(matchedRoom);
-          setIncidentForm(prev => ({
-            ...prev,
-            deviceId: '',
-            deviceSn: '',
-            deviceName: '',
-            room: matchedRoom,
-            faculty: ''
-          }));
-          return;
-        }
-      }
-
-      // If nothing is matched
-      alert(`Không tìm thấy thiết bị hay phòng nào tương ứng với mã: "${val}". Vui lòng kiểm tra lại.`);
     });
   };
 
@@ -618,11 +471,11 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
               <div class="room-badge">PHÒNG: \${selectedAdminRoom}</div>
             </div>
             <div class="instructions">
-              <strong>Hướng dẫn & Danh mục thiết bị phòng học:</strong><br/>
-              1. Quét mã QR tại phòng <strong>\${selectedAdminRoom}</strong> để báo hỏng nhanh.<br/>
-              2. Các loại thiết bị hỗ trợ: <strong>Máy chiếu, Dây cáp HDMI, Dây VGA, Thiết bị điện, Điều hoà, Âm thanh, Bàn ghế</strong>.<br/>
-              3. Chọn thiết bị/loại thiết bị gặp sự cố, nhập mô tả và gửi báo cáo.<br/>
-              4. Bộ phận kỹ thuật sẽ nhận được thông báo tức thì qua Telegram Bot (@hotrogiangday_bot)!
+              <strong>Hướng dẫn dành cho giảng viên/sinh viên:</strong><br/>
+              1. Sử dụng Camera điện thoại hoặc tính năng Quét QR trên hệ thống DUE.<br/>
+              2. Quét mã QR này để tự động nhận dạng vị trí <strong>Phòng \${selectedAdminRoom}</strong>.<br/>
+              3. Chọn chính xác thiết bị đang gặp sự cố trong phòng và ghi nhận mô tả lỗi.<br/>
+              4. Nhấn <strong>Gửi báo cáo</strong>, kỹ thuật viên sẽ nhận được thông báo ngay lập tức!
             </div>
           </div>
           <script>
@@ -867,39 +720,20 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
 
   const handleIncidentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const isCustomDevice = incidentForm.deviceId === 'custom';
-    
-    if (!isCustomDevice && !incidentForm.deviceId) {
-      alert('Vui lòng chọn thiết bị gặp sự cố.');
+    if (!incidentForm.deviceId || !incidentForm.description.trim()) {
+      alert('Vui lòng chọn thiết bị và mô tả chi tiết sự cố.');
       return;
     }
     
-    if (isCustomDevice && !incidentForm.deviceName.trim()) {
-      alert('Vui lòng nhập loại/tên thiết bị.');
-      return;
-    }
-    
-    if (isCustomDevice && !incidentForm.room.trim()) {
-      alert('Vui lòng nhập phòng học / phòng Lab.');
-      return;
-    }
-
-    if (!incidentForm.description.trim()) {
-      alert('Vui lòng mô tả chi tiết sự cố.');
-      return;
-    }
-    
-    // Find selected device details if it's a registered device, otherwise use user input
-    const selectedDevice = !isCustomDevice ? devices.find(d => d.id === incidentForm.deviceId) : null;
+    // Find selected device details to supply richer metadata to Discord / Webhook
+    const selectedDevice = devices.find(d => d.id === incidentForm.deviceId);
     const incidentData = {
       ...incidentForm,
-      deviceId: isCustomDevice ? 'custom' : (selectedDevice ? selectedDevice.id : ''),
-      deviceName: isCustomDevice ? incidentForm.deviceName.trim() : (selectedDevice ? selectedDevice.name : 'Thiết bị không rõ'),
-      deviceSn: isCustomDevice ? (incidentForm.deviceSn.trim() || 'N/A') : (selectedDevice ? selectedDevice.serialNumber : 'Không rõ SN'),
-      room: isCustomDevice ? incidentForm.room.trim() : (selectedDevice ? (selectedDevice.location.room || 'Phòng chung') : 'Không rõ phòng'),
-      faculty: isCustomDevice ? (incidentForm.faculty.trim() || 'Cơ sở vật chất') : (selectedDevice ? (selectedDevice.location.faculty || 'Phòng chung') : 'Không rõ khoa'),
-      reporterName: currentUser?.name || incidentForm.reporterName || 'Cán Bộ Kỹ Thuật'
+      deviceName: selectedDevice ? selectedDevice.name : 'Thiết bị không rõ',
+      deviceSn: selectedDevice ? selectedDevice.serialNumber : 'Không rõ SN',
+      room: selectedDevice ? (selectedDevice.location.room || 'Phòng chung') : 'Không rõ phòng',
+      faculty: selectedDevice ? (selectedDevice.location.faculty || 'Phòng chung') : 'Không rõ khoa',
+      reporterName: currentUser?.name || incidentForm.reportedBy || 'Cán Bộ Kỹ Thuật'
     };
     
     // 1. Save incident locally/Firestore via callback
@@ -907,7 +741,35 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
     
     let isNotified = false;
 
-    // 2. Trigger n8n webhook if configured
+    // 2. Trigger direct Discord Webhook message
+    if (discordWebhookUrl.trim()) {
+      try {
+        localStorage.setItem('DUE_DISCORD_WEBHOOK_URL', discordWebhookUrl);
+        
+        const res = await fetch('/api/discord/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            webhookUrl: discordWebhookUrl,
+            faultData: {
+              room: incidentData.room,
+              deviceName: incidentData.deviceName,
+              sn: incidentData.deviceSn,
+              reporter: incidentData.reporterName,
+              description: incidentData.description
+            },
+            eventType: 'new'
+          })
+        });
+        if (res.ok) {
+          isNotified = true;
+        }
+      } catch (discErr) {
+        console.error('Error triggering direct Discord notification:', discErr);
+      }
+    }
+
+    // 3. Trigger n8n webhook if configured
     if (n8nWebhookUrl.trim()) {
       try {
         localStorage.setItem('DUE_N8N_WEBHOOK_URL', n8nWebhookUrl);
@@ -927,31 +789,8 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
       }
     }
 
-    // 3. Trigger direct Telegram Bot (@hotrogiangday_bot) notification if chat id configured
-    if (telegramChatId.trim()) {
-      try {
-        localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', telegramBotToken);
-        localStorage.setItem('DUE_TELEGRAM_CHAT_ID', telegramChatId);
-
-        const res = await fetch('/api/telegram/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            token: telegramBotToken,
-            chatId: telegramChatId,
-            incident: incidentData
-          })
-        });
-        if (res.ok) {
-          isNotified = true;
-        }
-      } catch (tgErr) {
-        console.error('Error triggering Telegram notification:', tgErr);
-      }
-    }
-
     if (isNotified) {
-      alert('Báo cáo sự cố hư hỏng đã được tạo và hệ thống đã gửi thông báo thành công qua Telegram Bot (@hotrogiangday_bot)!');
+      alert('Báo cáo sự cố hư hỏng đã được tạo và hệ thống đã gửi thông báo Discord thành công!');
     } else {
       alert('Báo cáo sự cố hư hỏng đã được tạo thành công!');
     }
@@ -1750,11 +1589,11 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                   Báo Cáo Sự Cố Hư Hỏng Thiết Bị Đột Xuất
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Tạo báo cáo hỏng hóc để kích hoạt thông báo Telegram tới nhóm kỹ thuật viên quản lý thiết bị
+                  Tạo báo cáo hỏng hóc để kích hoạt thông báo Discord tới nhóm kỹ thuật viên quản lý thiết bị
                 </p>
               </div>
 
-              {currentUser && (
+              {currentUser?.role === 'admin' && (
                 <button
                   type="button"
                   onClick={() => handleScanDeviceForTab('incident')}
@@ -1766,8 +1605,8 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
               )}
             </div>
 
-            {/* Telegram, Webhook & Device PWA Notification Integration Dashboard Card */}
-            {(currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.role === 'technician') ? (
+            {/* Discord, Webhook & Device PWA Notification Integration Dashboard Card */}
+            {currentUser?.role === 'admin' && (
               <div className="rounded-2xl bg-slate-50 border border-slate-200 p-5 space-y-4 shadow-inner">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
                   <div className="flex items-center gap-2.5">
@@ -1776,19 +1615,19 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                     </div>
                     <div>
                       <h4 className="font-bold text-slate-900 text-xs">Cấu hình Hệ thống Thông báo DUE</h4>
-                      <p className="text-[11px] text-slate-500">Nhận cảnh báo thời gian thực trên Telegram, Webhook hoặc trực tiếp trên Thiết bị Di động</p>
+                      <p className="text-[11px] text-slate-500">Nhận cảnh báo thời gian thực trên Discord, Webhook hoặc trực tiếp trên Thiết bị Di động</p>
                     </div>
                   </div>
 
                   <div className="flex bg-slate-200/80 p-0.5 rounded-xl text-[11px] overflow-x-auto max-w-full shrink-0">
                     <button
                       type="button"
-                      onClick={() => setConfigTab('telegram')}
+                      onClick={() => setConfigTab('discord')}
                       className={`px-3 py-1.5 rounded-lg font-bold transition whitespace-nowrap ${
-                        configTab === 'telegram' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                        configTab === 'discord' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      🤖 Telegram Bot (@hotrogiangday_bot)
+                      💬 Discord Webhook
                     </button>
                     <button
                       type="button"
@@ -1811,145 +1650,44 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                   </div>
                 </div>
 
-                {configTab === 'telegram' ? (
+                {configTab === 'discord' ? (
                   <div className="space-y-3.5">
-                    <div className="bg-sky-50/70 text-sky-900 p-3 rounded-xl border border-sky-200 text-[11px] leading-relaxed space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <p className="font-bold">💡 Hướng dẫn cấu hình Telegram Bot (@hotrogiangday_bot):</p>
-                        <a 
-                          href="https://t.me/hotrogiangday_bot" 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
-                          className="inline-flex items-center gap-1 text-sky-700 hover:text-sky-900 font-bold underline text-[11px]"
-                        >
-                          Mở bot @hotrogiangday_bot ↗
-                        </a>
-                      </div>
-                      <p className="text-[10px] text-sky-800 leading-relaxed">
-                        1. Nhấn vào liên kết trên hoặc tìm <b>@hotrogiangday_bot</b> trong Telegram, gửi lệnh <code>/start</code> hoặc <code>hello</code>.<br/>
-                        2. Nhấn nút <b>"🔍 Tự động quét Chat ID"</b> để hệ thống nhận diện và tự động lưu vào cơ sở dữ liệu chung.<br/>
-                        3. Bấm <b>"🚀 Gửi thử"</b> để kiểm tra tin nhắn cảnh báo đến Telegram ngay lập tức!
-                      </p>
+                    <div className="bg-emerald-50/60 text-emerald-800 p-3 rounded-xl border border-emerald-150 text-[11px] leading-relaxed">
+                      💡 <b>Cách kết nối nhanh:</b> Tạo một Webhook trong kênh Discord của bạn, sao chép địa chỉ Webhook URL rồi dán vào ô bên dưới. Hệ thống sẽ tự động gửi thông báo dạng <b>Embed</b> trực quan có mã màu kèm theo chẩn đoán lỗi từ <b>Gemini AI</b>.
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="block text-[11px] font-bold text-slate-700">Telegram Bot Token:</label>
-                        <input
-                          type="text"
-                          value={telegramBotToken}
-                          onChange={(e) => setTelegramBotToken(e.target.value)}
-                          placeholder="8611136413:AAHYvr_pXy..."
-                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white text-slate-800 focus:outline-none focus:border-sky-500 font-mono shadow-sm"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="block text-[11px] font-bold text-slate-700">Telegram Chat ID / Group ID:</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={telegramChatId}
-                            onChange={(e) => setTelegramChatId(e.target.value)}
-                            placeholder="Ví dụ: -100123456789 hoặc 12345678"
-                            className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white text-slate-800 focus:outline-none focus:border-sky-500 font-mono shadow-sm"
-                          />
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (!telegramBotToken.trim() || !telegramChatId.trim()) {
-                                alert('Vui lòng nhập đầy đủ Bot Token và Chat ID.');
-                                return;
-                              }
-                              try {
-                                await setDoc(doc(db, 'settings', 'app_config'), { 
-                                  telegramBotToken: telegramBotToken.trim(),
-                                  telegramChatId: telegramChatId.trim()
-                                }, { merge: true });
-                                localStorage.setItem('DUE_TELEGRAM_BOT_TOKEN', telegramBotToken.trim());
-                                localStorage.setItem('DUE_TELEGRAM_CHAT_ID', telegramChatId.trim());
-                                alert('Đã lưu và đồng bộ cấu hình Telegram Bot (@hotrogiangday_bot) thành công!');
-                              } catch (err) {
-                                console.error('Error saving telegram config:', err);
-                                alert('Lỗi: Không thể lưu cấu hình lên cơ sở dữ liệu.');
-                              }
-                            }}
-                            className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 text-xs font-bold transition shadow-sm whitespace-nowrap"
-                          >
-                            Lưu
-                          </button>
-                        </div>
-                      </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-bold text-slate-700">Discord Webhook URL:</label>
+                      <input
+                        type="text"
+                        value={discordWebhookUrl}
+                        onChange={(e) => {
+                          setDiscordWebhookUrl(e.target.value);
+                          localStorage.setItem('DUE_DISCORD_WEBHOOK_URL', e.target.value);
+                        }}
+                        placeholder="Dán mã Webhook URL của kênh Discord vào đây..."
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white text-slate-800 focus:outline-none focus:border-emerald-500 font-mono"
+                      />
                     </div>
-
-                    {scannedChats.length > 1 && (
-                      <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl space-y-2">
-                        <label className="text-[11px] font-bold text-indigo-900">Chọn nhóm/chat phát hiện được:</label>
-                        <div className="flex flex-wrap gap-2">
-                          {scannedChats.map(c => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={async () => {
-                                setTelegramChatId(c.id);
-                                localStorage.setItem('DUE_TELEGRAM_CHAT_ID', c.id);
-                                try {
-                                  await setDoc(doc(db, 'settings', 'app_config'), {
-                                    telegramBotToken: telegramBotToken.trim(),
-                                    telegramChatId: c.id
-                                  }, { merge: true });
-                                } catch (e) {
-                                  console.warn(e);
-                                }
-                                setTelegramTestResult(`✅ Đã chọn Chat ID: <b>${c.id}</b> (${c.name || c.type})!`);
-                              }}
-                              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition ${
-                                telegramChatId === c.id 
-                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
-                                  : 'bg-white text-slate-800 border-slate-300 hover:bg-slate-100'
-                              }`}
-                            >
-                              {c.name || c.id} ({c.type})
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
 
                     <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-slate-100">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={handleScanTelegramChats}
-                          disabled={telegramScanning || !telegramBotToken.trim()}
-                          className="rounded-xl bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-3 py-2 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-                        >
-                          {telegramScanning ? 'Đang quét...' : '🔍 Tự động quét Chat ID'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleResetWebhook}
-                          disabled={resettingWebhook || !telegramBotToken.trim()}
-                          className="rounded-xl bg-slate-600 hover:bg-slate-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-3 py-2 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-                          title="Xóa webhook nếu bot bị xung đột"
-                        >
-                          {resettingWebhook ? 'Đang reset...' : '🔄 Reset Webhook'}
-                        </button>
-                        <span className="text-[10px] text-slate-500">
-                          Bot: <strong className="text-sky-700">@hotrogiangday_bot</strong>
-                        </span>
-                      </div>
+                      <span className="text-[10px] text-slate-500">
+                        Tên dịch vụ: <strong className="text-slate-700">Hệ thống Báo hỏng DUE</strong>
+                      </span>
                       <button
                         type="button"
-                        onClick={handleTestTelegram}
-                        disabled={telegramTesting || !telegramBotToken.trim() || !telegramChatId.trim()}
-                        className="rounded-xl bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                        onClick={handleTestDiscord}
+                        disabled={discordTesting || !discordWebhookUrl.trim()}
+                        className="rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2 text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
                       >
-                        {telegramTesting ? 'Đang gửi...' : '🚀 Gửi thử tới @hotrogiangday_bot'}
+                        {discordTesting ? 'Đang kết nối...' : '🚀 Gửi thử tín hiệu Discord'}
                       </button>
                     </div>
 
-                    {telegramTestResult && (
-                      <div className="text-xs font-semibold p-3 rounded-xl bg-white border border-slate-200 shadow-sm text-slate-800" dangerouslySetInnerHTML={{ __html: telegramTestResult }} />
+                    {discordTestResult && (
+                      <div className="text-xs font-semibold p-3 rounded-xl bg-white border border-slate-200 shadow-sm text-slate-800">
+                        {discordTestResult}
+                      </div>
                     )}
                   </div>
                 ) : configTab === 'n8n' ? (
@@ -1985,19 +1723,6 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                   renderDeviceNotificationSettings()
                 )}
               </div>
-            ) : (
-              <div className="rounded-xl p-3 bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <span className={`h-2.5 w-2.5 rounded-full ${telegramChatId ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
-                  <span className="text-slate-700 font-medium">
-                    {telegramChatId ? (
-                      <>Kênh Telegram: <b className="text-emerald-700">@hotrogiangday_bot đã kết nối</b> (Mọi báo cáo sự cố gửi đi sẽ thông báo tới kỹ thuật viên ngay)</>
-                    ) : (
-                      <>Kênh Telegram: <span className="text-amber-700">Chưa thiết lập Chat ID</span> (Quản trị viên cần kết nối để nhận tin Telegram)</>
-                    )}
-                  </span>
-                </div>
-              </div>
             )}
 
             {/* BÁO CÁO SỰ CỐ PANEL */}
@@ -2028,40 +1753,34 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[220px] overflow-y-auto pr-1">
-                  {devices.filter(d => d.location.room && normalizeRoom(d.location.room) === normalizeRoom(scannedRoom)).length > 0 ? (
-                    devices
-                      .filter(d => d.location.room && normalizeRoom(d.location.room) === normalizeRoom(scannedRoom))
-                      .map(dev => (
-                        <button
-                          key={dev.id}
-                          type="button"
-                          onClick={() => {
-                            setIncidentForm(prev => ({
-                              ...prev,
-                              deviceId: dev.id,
-                              deviceSn: dev.serialNumber,
-                              deviceName: dev.name,
-                              faculty: dev.location.faculty,
-                              room: dev.location.room
-                            }));
-                            setScannedRoom(null);
-                          }}
-                          className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 hover:border-rose-500 hover:bg-rose-50/20 text-left transition group shadow-sm bg-slate-50/50 w-full"
-                        >
-                          <div className="p-1.5 rounded-lg bg-indigo-50 group-hover:bg-rose-50 text-indigo-600 group-hover:text-rose-600 shrink-0 transition">
-                            📟
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-bold text-slate-800 text-[11px] truncate group-hover:text-rose-700">{dev.name}</p>
-                            <p className="text-[9px] font-mono text-slate-500 truncate mt-0.5">SN: {dev.serialNumber}</p>
-                          </div>
-                        </button>
-                      ))
-                  ) : (
-                    <div className="col-span-full py-6 text-center">
-                      <p className="text-xs text-slate-500 italic">Chưa có thiết bị nào khai báo trong phòng học này.</p>
-                    </div>
-                  )}
+                  {devices
+                    .filter(d => d.location.room.toLowerCase() === scannedRoom.toLowerCase())
+                    .map(dev => (
+                      <button
+                        key={dev.id}
+                        type="button"
+                        onClick={() => {
+                          setIncidentForm(prev => ({
+                            ...prev,
+                            deviceId: dev.id,
+                            deviceSn: dev.serialNumber,
+                            deviceName: dev.name,
+                            faculty: dev.location.faculty,
+                            room: dev.location.room
+                          }));
+                          setScannedRoom(null);
+                        }}
+                        className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 hover:border-rose-500 hover:bg-rose-50/20 text-left transition group shadow-sm bg-slate-50/50 w-full"
+                      >
+                        <div className="p-1.5 rounded-lg bg-indigo-50 group-hover:bg-rose-50 text-indigo-600 group-hover:text-rose-600 shrink-0 transition">
+                          📟
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-800 text-[11px] truncate group-hover:text-rose-700">{dev.name}</p>
+                          <p className="text-[9px] font-mono text-slate-500 truncate mt-0.5">SN: {dev.serialNumber}</p>
+                        </div>
+                      </button>
+                    ))}
                 </div>
               </div>
             ) : selectedIncidentDevice ? (
@@ -2139,179 +1858,24 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
 
                 <div className="rounded-xl bg-rose-50/50 p-3 border border-rose-100 flex items-center gap-2 text-rose-900 text-[11px] leading-relaxed">
                   <Zap className="h-4 w-4 text-rose-600 shrink-0 animate-pulse" />
-                  <span>Cảnh báo sự cố này sẽ được chuyển ngay đến bộ phận kỹ thuật qua Telegram Bot (@hotrogiangday_bot)!</span>
+                  <span>Hệ thống sẽ ngay lập tức chẩn đoán bằng <b>Gemini AI</b> và bắn thông báo khẩn tới nhóm kỹ thuật viên!</span>
                 </div>
 
                 <button
                   type="submit"
                   className="w-full rounded-xl bg-[#0056b3] hover:bg-[#004085] py-3 text-xs font-bold text-white transition-all shadow-md hover:shadow-indigo-100 active:scale-[0.98] uppercase tracking-wider"
                 >
-                  GỬI BÁO CÁO KHẨN
-                </button>
-              </form>
-            ) : incidentForm.deviceId === 'custom' ? (
-              /* --- KHUNG BÁO CÁO THIẾT BỊ PHÒNG HỌC (CÁN BỘ KHOA/GIẢNG ĐƯỜNG) --- */
-              <form onSubmit={handleIncidentSubmit} className="space-y-4 animate-fade-in text-left">
-                <div className="bg-amber-50/80 border border-amber-200 p-4.5 rounded-xl space-y-2 shadow-sm text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                      🏫 Báo hỏng thiết bị phòng học / thiết bị khác
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIncidentForm(prev => ({ ...prev, deviceId: '', deviceSn: '', deviceName: '' }));
-                        setScannedRoom(null);
-                      }}
-                      className="text-[11px] text-rose-600 hover:text-rose-700 font-bold transition hover:underline"
-                    >
-                      Quay lại quét QR
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-slate-600">
-                    Dành cho Cán bộ Khoa / Giảng đường khai báo nhanh thiết bị phòng học gặp sự cố chưa có sẵn trong danh sách.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-bold text-slate-600">📍 Phòng học / Phòng Lab *:</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Ví dụ: D305, A101, Phòng máy tính..."
-                      value={incidentForm.room}
-                      onChange={(e) => setIncidentForm(prev => ({ ...prev, room: e.target.value }))}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs bg-white text-slate-800 font-semibold shadow-sm focus:outline-none focus:border-rose-500 transition"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-bold text-slate-600">🏫 Khoa / Bộ môn:</label>
-                    <input
-                      type="text"
-                      placeholder="Ví dụ: Khoa CNTT, Cơ khí, Ngoại ngữ..."
-                      value={incidentForm.faculty}
-                      onChange={(e) => setIncidentForm(prev => ({ ...prev, faculty: e.target.value }))}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs bg-white text-slate-800 font-semibold shadow-sm focus:outline-none focus:border-rose-500 transition"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-bold text-slate-600">📟 Loại thiết bị phòng học *:</label>
-                    <select
-                      required
-                      value={customCategory}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setCustomCategory(val);
-                        if (val !== 'Khác') {
-                          setIncidentForm(prev => ({ ...prev, deviceName: val }));
-                        } else {
-                          setIncidentForm(prev => ({ ...prev, deviceName: '' }));
-                        }
-                      }}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs bg-white text-slate-800 shadow-sm cursor-pointer focus:outline-none focus:border-rose-500 transition font-semibold"
-                    >
-                      <option value="">-- Chọn loại thiết bị phòng học --</option>
-                      <option value="Máy chiếu">1. Máy chiếu</option>
-                      <option value="Dây cáp HDMI">2. Dây cáp HDMI</option>
-                      <option value="Dây VGA">3. Dây VGA</option>
-                      <option value="Thiết bị điện">4. Thiết bị điện</option>
-                      <option value="Điều hoà">5. Điều hoà</option>
-                      <option value="Âm thanh">6. Âm thanh</option>
-                      <option value="Bàn ghế">7. Bàn ghế</option>
-                      <option value="Khác">Khác (Tự nhập tên thiết bị...)</option>
-                    </select>
-
-                    {customCategory === 'Khác' && (
-                      <input
-                        type="text"
-                        required
-                        placeholder="Nhập tên thiết bị khác..."
-                        value={incidentForm.deviceName}
-                        onChange={(e) => setIncidentForm(prev => ({ ...prev, deviceName: e.target.value }))}
-                        className="w-full mt-2 rounded-lg border border-slate-300 px-3 py-1.5 text-xs bg-white text-slate-800 font-semibold shadow-sm focus:outline-none focus:border-rose-500 transition animate-fade-in"
-                      />
-                    )}
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-bold text-slate-600">🔑 Số sê-ri SN (Nếu có):</label>
-                    <input
-                      type="text"
-                      placeholder="Nhập mã SN thiết bị..."
-                      value={incidentForm.deviceSn}
-                      onChange={(e) => setIncidentForm(prev => ({ ...prev, deviceSn: e.target.value }))}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs bg-white text-slate-800 font-mono shadow-sm focus:outline-none focus:border-rose-500 transition"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-bold text-slate-600">👤 Người báo cáo:</label>
-                    <input
-                      type="text"
-                      required
-                      disabled={currentUser?.role === 'staff'}
-                      value={incidentForm.reporterName}
-                      onChange={(e) => setIncidentForm(prev => ({ ...prev, reporterName: e.target.value }))}
-                      placeholder="Nhập tên người báo..."
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs bg-slate-50 disabled:opacity-75 disabled:cursor-not-allowed font-semibold text-slate-700 shadow-sm focus:outline-none focus:border-rose-500 transition"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-bold text-slate-600">⚠️ Mức độ khẩn cấp:</label>
-                    <select
-                      value={incidentForm.severity}
-                      onChange={(e) => setIncidentForm(prev => ({ ...prev, severity: e.target.value as any }))}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs bg-white text-slate-800 shadow-sm cursor-pointer focus:outline-none focus:border-rose-500 transition font-medium"
-                    >
-                      <option value="low">🟢 Thấp (thiết bị vẫn tạm dùng được)</option>
-                      <option value="medium">🟡 Trung bình (cần sửa trong 1-2 ngày)</option>
-                      <option value="high">🔴 Cao / Gấp (ảnh hưởng việc giảng dạy)</option>
-                      <option value="urgent">🚨 Khẩn cấp (ngừng lớp học)</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label htmlFor="txtCustomDescription" className="block text-xs font-bold text-slate-700">Mô tả chi tiết sự cố phòng học *</label>
-                  <textarea
-                    id="txtCustomDescription"
-                    required
-                    rows={3}
-                    value={incidentForm.description}
-                    onChange={(e) => setIncidentForm(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="Ví dụ: Máy chiếu không lên hình tại phòng D305, điều hòa chảy nước, micro bị hú rè..."
-                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500 shadow-sm placeholder-slate-400 leading-relaxed text-slate-800 transition"
-                  />
-                </div>
-
-                <div className="rounded-xl bg-amber-50 p-3 border border-amber-150 flex items-center gap-2 text-amber-900 text-[11px] leading-relaxed">
-                  <Zap className="h-4 w-4 text-amber-600 shrink-0 animate-pulse" />
-                  <span>Báo cáo sự cố thiết bị phòng học sẽ được gửi thông báo tức thì đến bộ phận kỹ thuật qua Telegram Bot (@hotrogiangday_bot)!</span>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full rounded-xl bg-[#0056b3] hover:bg-[#004085] py-3 text-xs font-bold text-white transition-all shadow-md hover:shadow-indigo-100 active:scale-[0.98] uppercase tracking-wider"
-                >
-                  GỬI BÁO CÁO SỰ CỐ PHÒNG HỌC
+                  GỬI BÁO CÁO NHANH
                 </button>
               </form>
             ) : (
-              /* --- TRẠNG THÁI CHỜ QUÉT QR HOẶC CHỌN THỦ CÔNG --- */
+              /* --- THÔNG BÁO NẾU CHƯA CÓ DỮ LIỆU QR (ERROR STATE) --- */
               <div id="errorState" className="bg-white border border-slate-200 rounded-2xl p-6.5 text-center space-y-4 shadow-sm animate-fade-in">
                 <div className="mx-auto inline-flex items-center justify-center p-3.5 rounded-full bg-rose-50 text-rose-600 mb-1">
                   <Camera className="h-6 w-6" />
                 </div>
                 <p className="text-xs text-slate-500 font-medium">
-                  Vui lòng quét mã QR của Phòng hoặc của Thiết bị để bắt đầu báo cáo sự cố.
+                  Vui lòng quét mã QR trên thiết bị để tiếp tục.
                 </p>
                 
                 {/* Nút bật camera quét mã QR */}
@@ -2356,7 +1920,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                         onChange={(e) => handleSelectDeviceForIncident(e.target.value)}
                         className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:border-rose-500 bg-white text-slate-800 shadow-sm cursor-pointer transition font-medium"
                       >
-                        <option value="">-- Chọn thiết bị từ danh sách --</option>
+                        <option value="">-- Chọn thiết bị từ danh sách ({devices.length}) --</option>
                         {devices
                           .filter(dev => {
                             if (!incidentDeviceSearchQuery.trim()) return true;
@@ -2376,35 +1940,13 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                       </select>
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      <button
-                        type="button"
-                        onClick={() => setShowManualSelect(true)}
-                        className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold underline transition-all block mx-auto"
-                      >
-                        🔍 Hoặc tìm kiếm & chọn thiết bị thủ công từ danh sách
-                      </button>
-
-                      <div className="pt-2 border-t border-slate-100">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIncidentForm(prev => ({
-                              ...prev,
-                              deviceId: 'custom',
-                              room: '',
-                              deviceName: '',
-                              deviceSn: '',
-                              faculty: ''
-                            }));
-                            setCustomCategory('');
-                          }}
-                          className="w-full flex items-center justify-center gap-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 px-4 py-2.5 text-xs font-bold text-amber-900 transition shadow-sm"
-                        >
-                          🏫 Báo hỏng thiết bị phòng học (Cán bộ Khoa/Giảng đường)
-                        </button>
-                      </div>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowManualSelect(true)}
+                      className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold underline transition-all"
+                    >
+                      🔍 Hoặc tìm kiếm & chọn thiết bị thủ công từ danh sách
+                    </button>
                   )}
                 </div>
               </div>
@@ -2431,7 +1973,6 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                     onChange={(e) => setSelectedAdminRoom(e.target.value)}
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white text-slate-800 shadow-sm font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer transition"
                   >
-                    <option value="">-- Chọn phòng từ danh sách --</option>
                     {Array.from(new Set(devices.map(d => d.location.room).filter(Boolean)))
                       .sort()
                       .map(rm => (
@@ -2440,16 +1981,6 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                         </option>
                       ))}
                   </select>
-                  <div className="flex items-center gap-2 pt-1">
-                    <span className="text-[10px] text-slate-500 font-bold whitespace-nowrap">Hoặc nhập phòng tự do:</span>
-                    <input
-                      type="text"
-                      placeholder="Ví dụ: D305, H002..."
-                      value={selectedAdminRoom}
-                      onChange={(e) => setSelectedAdminRoom(e.target.value)}
-                      className="flex-1 rounded-xl border border-slate-300 px-3 py-1.5 text-xs bg-white text-slate-800 focus:outline-none focus:border-indigo-500 font-semibold shadow-sm"
-                    />
-                  </div>
                 </div>
 
                 {selectedAdminRoom ? (
@@ -2470,28 +2001,16 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                         </span>
                       </div>
 
-                      <div className="w-full space-y-2 text-[11px] text-slate-700 bg-white p-3 rounded-xl border border-slate-200">
-                        <div className="border-b border-dashed border-slate-200 pb-1.5 text-center text-xs font-bold text-slate-800">
-                          Danh mục thiết bị khi quét QR phòng:
+                      <div className="w-full space-y-1.5 text-[11px] text-slate-700 bg-white p-3 rounded-xl border border-slate-150">
+                        <div className="border-b border-dashed border-slate-200 pb-1.5 mb-1.5 text-center text-xs font-bold text-slate-800">
+                          Các thiết bị sẽ hiển thị khi quét:
                         </div>
-                        <div className="grid grid-cols-1 gap-1 text-[10px] bg-slate-50 p-2 rounded-lg border border-slate-100 text-slate-600 font-semibold">
-                          <div>1. Máy chiếu</div>
-                          <div>2. Dây cáp HDMI</div>
-                          <div>3. Dây VGA</div>
-                          <div>4. Thiết bị điện</div>
-                          <div>5. Điều hoà</div>
-                          <div>6. Âm thanh</div>
-                          <div>7. Bàn ghế</div>
-                        </div>
-                        <div className="text-[10px] font-bold text-indigo-700 pt-1 border-t border-slate-100">
-                          + Thiết bị riêng trong phòng ({devices.filter(d => d.location.room === selectedAdminRoom).length}):
-                        </div>
-                        <div className="max-h-[80px] overflow-y-auto space-y-1">
+                        <div className="max-h-[120px] overflow-y-auto space-y-1">
                           {devices
                             .filter(d => d.location.room === selectedAdminRoom)
                             .map((dev, idx) => (
                               <p key={dev.id} className="truncate font-medium text-slate-600">
-                                • <span className="font-bold text-slate-800">{dev.name}</span> <span className="text-[9px] font-mono bg-slate-100 px-1 rounded text-slate-500">[{dev.serialNumber}]</span>
+                                {idx + 1}. <span className="font-bold text-slate-800">{dev.name}</span> <span className="text-[10px] font-mono bg-slate-100 px-1 rounded text-slate-500">[{dev.serialNumber}]</span>
                               </p>
                             ))}
                         </div>
@@ -2531,59 +2050,12 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
 
             {/* Incidents Active List */}
             <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-200 space-y-4">
-              <div className="border-b border-slate-100 pb-3 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h4 className="font-bold text-sm text-slate-900">Danh Sách Sự Cố Đang Xử Lý</h4>
-                  <p className="text-[11px] text-slate-500">Tiếp nhận, phản hồi và theo dõi lịch sử xử lý</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const headers = ['Mã thiết bị / SN', 'Tên thiết bị', 'Phòng', 'Khoa', 'Mức độ', 'Trạng thái', 'Mô tả sự cố', 'Người báo', 'Ngày báo', 'Kênh tiếp nhận', 'Người tiếp nhận', 'Ngày tiếp nhận', 'Người xử lý', 'Ngày xử lý', 'Kết quả xử lý'];
-                      const rows = incidents.map(inc => [
-                        inc.deviceSn || '',
-                        inc.deviceName || '',
-                        inc.room || '',
-                        inc.faculty || '',
-                        inc.severity === 'urgent' ? 'Khẩn cấp' : inc.severity === 'high' ? 'Cao' : inc.severity === 'medium' ? 'Trung bình' : 'Thấp',
-                        inc.status === 'resolved' ? 'Đã khắc phục' : inc.status === 'in_progress' ? 'Đang xử lý' : 'Chờ tiếp nhận',
-                        (inc.description || '').replace(/"/g, '""'),
-                        inc.reporterName || '',
-                        new Date(inc.reportedAt).toLocaleString('vi-VN'),
-                        'Telegram Bot (@hotrogiangday_bot)',
-                        inc.acceptedBy || '',
-                        inc.acceptedAt ? new Date(inc.acceptedAt).toLocaleString('vi-VN') : '',
-                        inc.responderName || '',
-                        inc.resolvedAt ? new Date(inc.resolvedAt).toLocaleString('vi-VN') : '',
-                        (inc.resolutionNotes || '').replace(/"/g, '""')
-                      ]);
-
-                      const csvContent = '\uFEFF' + [
-                        headers.join(','),
-                        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-                      ].join('\n');
-
-                      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                      const url = URL.createObjectURL(blob);
-                      const link = document.createElement('a');
-                      link.setAttribute('href', url);
-                      link.setAttribute('download', `Bao_cao_su_co_CSVC_${new Date().toISOString().slice(0, 10)}.csv`);
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      URL.revokeObjectURL(url);
-                    }}
-                    className="flex items-center gap-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-2.5 py-1 text-[11px] font-bold transition shadow-sm"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    Xuất CSV / Excel
-                  </button>
-                  <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
-                    {incidents.filter(i => i.status !== 'resolved').length} chưa xong
-                  </span>
-                </div>
-              </div>
+              <h4 className="font-bold text-sm text-slate-900 border-b border-slate-100 pb-3 flex items-center justify-between">
+                <span>Danh Sách Sự Cố Đang Xử Lý</span>
+                <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                  {incidents.filter(i => i.status !== 'resolved').length} chưa xong
+                </span>
+              </h4>
 
               <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
                 {incidents.length === 0 ? (
@@ -2616,37 +2088,15 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                       </div>
 
                       <div className="flex flex-col gap-1 text-[10px] text-slate-500 border-t border-slate-200/60 pt-2">
-                        <div className="flex items-center justify-between">
-                          <p className="flex items-center gap-1.5">
-                            <span>👤 Người báo:</span>
-                            <strong className="text-slate-700">{inc.reporterName}</strong>
-                          </p>
-                          <span className="text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded text-[9px] font-mono font-bold">
-                            Telegram: @hotrogiangday_bot
-                          </span>
-                        </div>
+                        <p className="flex items-center gap-1.5">
+                          <span>👤 Người báo:</span>
+                          <strong className="text-slate-700">{inc.reporterName}</strong>
+                        </p>
                         <p className="flex items-center gap-1.5">
                           <span>🕒 Thời gian báo:</span>
                           <span>{new Date(inc.reportedAt).toLocaleString('vi-VN')}</span>
                         </p>
                       </div>
-
-                      {/* Display Acceptance info */}
-                      {inc.acceptedBy && (
-                        <div className="bg-indigo-50/70 border border-indigo-200/60 rounded-xl p-2.5 text-[11px] space-y-1">
-                          <p className="font-bold text-indigo-800 text-[10px] uppercase tracking-wider flex items-center gap-1">
-                            <span>🔧 KTV Tiếp nhận:</span> {inc.acceptedBy}
-                          </p>
-                          {inc.acceptanceNotes && (
-                            <p className="text-slate-600 text-[10px] italic">"{inc.acceptanceNotes}"</p>
-                          )}
-                          {inc.acceptedAt && (
-                            <p className="text-[9px] text-slate-400">
-                              🕒 Lúc: {new Date(inc.acceptedAt).toLocaleString('vi-VN')}
-                            </p>
-                          )}
-                        </div>
-                      )}
 
                       {/* Display Status Badge */}
                       <div className="flex items-center justify-between border-t border-slate-200/60 pt-2">
@@ -2670,12 +2120,11 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                             <span>📢 Kết quả xử lý:</span>
                           </p>
                           <p className="text-slate-700 font-medium text-[11px] leading-relaxed">{inc.resolutionNotes || 'Đã xử lý hoàn tất'}</p>
-                          <div className="flex items-center justify-between text-[9px] text-slate-400 italic pt-1 border-t border-emerald-100/50 mt-1">
-                            <span>👨‍🔧 Người xử lý: <b>{inc.responderName || 'Kỹ thuật viên CSVC'}</b></span>
-                            {inc.resolvedAt && (
-                              <span>🕒 {new Date(inc.resolvedAt).toLocaleString('vi-VN')}</span>
-                            )}
-                          </div>
+                          {inc.resolvedAt && (
+                            <p className="text-[9px] text-slate-400 italic pt-1 border-t border-emerald-100/50 mt-1">
+                              🕒 Hoàn tất lúc: {new Date(inc.resolvedAt).toLocaleString('vi-VN')}
+                            </p>
+                          )}
                         </div>
                       )}
 

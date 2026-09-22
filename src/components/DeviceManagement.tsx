@@ -334,23 +334,8 @@ export const DeviceManagement: React.FC<DeviceManagementProps> = ({
   };
 
   const handleScanForFormSN = () => {
-    onOpenScanner((scannedValue) => {
-      let sn = scannedValue.trim();
-
-      // Try parsing as URL first in case QR contains full link
-      if (sn.startsWith('http://') || sn.startsWith('https://')) {
-        try {
-          const url = new URL(sn);
-          const snParam = url.searchParams.get('sn') || url.searchParams.get('serialNumber');
-          if (snParam) {
-            sn = snParam;
-          }
-        } catch (urlErr) {
-          console.warn('Failed to parse scanned URL:', urlErr);
-        }
-      }
-
-      setFormData(prev => ({ ...prev, serialNumber: sn }));
+    onOpenScanner((scannedSn) => {
+      setFormData(prev => ({ ...prev, serialNumber: scannedSn }));
     });
   };
 

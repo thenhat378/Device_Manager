@@ -9,16 +9,13 @@ import {
   UserCheck, 
   LogOut, 
   Layers, 
-  Building, 
-  Bell, 
-  ArrowLeftRight, 
-  Users, 
-  Download, 
-  ClipboardList, 
-  Menu,
-  Bot,
-  Phone,
-  Send
+  Building,
+  Bell,
+  ArrowLeftRight,
+  Users,
+  Download,
+  ClipboardList,
+  Menu
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -32,9 +29,6 @@ interface HeaderProps {
   onInstallApp?: () => void;
   isSidebarOpen?: boolean;
   onToggleSidebar?: () => void;
-  onOpenChatbot?: () => void;
-  telegramChatId?: string;
-  onOpenTelegramConfig?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -47,10 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
   isInstallable,
   onInstallApp,
   isSidebarOpen = false,
-  onToggleSidebar,
-  onOpenChatbot,
-  telegramChatId,
-  onOpenTelegramConfig
+  onToggleSidebar
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-slate-900 text-white shadow-lg border-b border-slate-800">
@@ -130,34 +121,6 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                 )}
               </button>
-            )}
-
-            {/* Quick Chatbot AI Assistant Button */}
-            {currentUser && onOpenChatbot && (
-              <button
-                onClick={onOpenChatbot}
-                className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold text-white transition shadow-sm active:scale-95 border border-white/20"
-                title="Mở Trợ lý Chatbot CSVC DUE (Chát nhanh & Báo hỏng)"
-                id="header-open-chatbot-btn"
-              >
-                <Bot className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-300" />
-                <span className="hidden sm:inline">Trợ Lý AI</span>
-              </button>
-            )}
-
-            {/* Telegram Bot Button */}
-            {currentUser && (
-              <a
-                href="https://t.me/hotrogiangday_bot"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs font-bold text-white transition shadow-sm active:scale-95 border border-sky-400/40"
-                title="Kênh Telegram Kỹ thuật CSVC: @hotrogiangday_bot"
-                id="header-telegram-btn"
-              >
-                <Send className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-sky-200" />
-                <span className="hidden xs:inline font-mono">@hotrogiangday_bot</span>
-              </a>
             )}
 
             {/* Simple User Logout without Avatar */}

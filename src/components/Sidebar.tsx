@@ -13,8 +13,7 @@ import {
   ChevronRight,
   ShieldCheck,
   UserCheck,
-  Settings,
-  Bot
+  Settings
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getAvatarUrl } from '../utils';
@@ -26,7 +25,6 @@ interface SidebarProps {
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
   onOpenAdminProfile?: () => void;
-  onOpenChatbot?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -35,8 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentUser,
   isOpen,
   setIsOpen,
-  onOpenAdminProfile,
-  onOpenChatbot
+  onOpenAdminProfile
 }) => {
   if (!currentUser) return null;
 
@@ -49,8 +46,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'maintenance' as const,
-      label: currentUser.role === 'staff' ? 'Chatbot CSVC & Báo Hỏng Telegram' : 'Kiểm Tra & Thay Vật Tư',
-      icon: currentUser.role === 'staff' ? Bot : Wrench,
+      label: currentUser.role === 'staff' ? 'Báo Cáo Sự Cố' : 'Kiểm Tra & Thay Vật Tư',
+      icon: Wrench,
       roles: ['admin', 'technician', 'staff'] as UserRole[]
     },
     {
@@ -189,32 +186,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             );
           })}
         </nav>
-
-        {/* Chatbot Quick Launcher Widget */}
-        {onOpenChatbot && (
-          <div className="px-3 py-2 border-t border-slate-800 shrink-0">
-            <button
-              onClick={() => {
-                onOpenChatbot();
-                setIsOpen(false);
-              }}
-              className="flex w-full items-center justify-between gap-2.5 rounded-xl bg-gradient-to-r from-blue-600/20 to-indigo-600/20 hover:from-blue-600/30 hover:to-indigo-600/30 border border-blue-500/30 p-2.5 text-left transition group"
-              title="Mở Trợ lý AI CSVC DUE"
-              id="sidebar-open-chatbot-btn"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white shrink-0 group-hover:scale-105 transition-transform shadow-xs">
-                  <Bot className="h-4.5 w-4.5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-bold text-slate-200 truncate">Trợ Lý AI CSVC</p>
-                  <p className="text-[10px] text-blue-300 font-medium truncate">Chát nhanh & Báo hỏng</p>
-                </div>
-              </div>
-              <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-            </button>
-          </div>
-        )}
 
         {/* Sidebar Footer */}
         <div className="border-t border-slate-800 p-4 bg-slate-950/25 text-center shrink-0">

@@ -65,13 +65,7 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
         return (
           <div
             key={toast.id}
-            onClick={() => {
-              if (toast.onClick) {
-                toast.onClick();
-                onDismiss(toast.id);
-              }
-            }}
-            className={`pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl border shadow-lg backdrop-blur-md transition-all duration-300 animate-in slide-in-from-top-3 ${style.bg} ${toast.onClick ? 'cursor-pointer hover:shadow-xl hover:scale-[1.01]' : ''}`}
+            className={`pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl border shadow-lg backdrop-blur-md transition-all duration-300 animate-in slide-in-from-top-3 ${style.bg}`}
           >
             <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${style.iconBg} shadow-sm mt-0.5`}>
               <IconComponent className="h-4 w-4" />
@@ -89,21 +83,13 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
               <p className="text-xs text-slate-700 mt-0.5 leading-relaxed break-words">
                 {toast.message}
               </p>
-              {toast.onClick && (
-                <span className="text-[10px] font-bold text-sky-700 mt-1 inline-flex items-center gap-1 underline">
-                  👉 Nhấn để kết nối Telegram ngay
-                </span>
-              )}
               <span className="text-[10px] text-slate-400 mt-1 block font-mono">
                 {new Date(toast.timestamp).toLocaleTimeString()}
               </span>
             </div>
 
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDismiss(toast.id);
-              }}
+              onClick={() => onDismiss(toast.id)}
               className="text-slate-400 hover:text-slate-700 rounded-md p-1 transition shrink-0"
               title="Đóng thông báo"
             >
