@@ -623,8 +623,6 @@ export default function App() {
     const newReport: Omit<IncidentReport, 'id'> = {
       reportedAt: new Date().toISOString(),
       status: 'open',
-      zaloPhone: '0987119665',
-      zaloSent: true,
       ...report
     };
 
@@ -638,8 +636,7 @@ export default function App() {
          await updateDoc(doc(db, 'devices', dev.id), { status: 'damaged', updatedAt: new Date().toISOString() });
       }
 
-      // Send Notifications to Hotline Zalo 0987119665
-      await sendZaloAlert(newReport, 'new');
+      // Send Notifications exclusively to Telegram Bot @hotrogiangday_bot
       await sendTelegramAlert(newReport, 'new');
 
     } catch (err) {
@@ -675,19 +672,20 @@ export default function App() {
 
       const resData = await res.json();
       if (!res.ok) {
-        if (resData.noChatId || !chatId) {
+        const errMsg = resData.error || '';
+        if (resData.noChatId || !chatId || errMsg.includes('chat not found') || errMsg.includes('chat_id is empty') || errMsg.includes('Bad Request')) {
           addToast(
-            '⚠️ Chưa Kết Nối Telegram Bot',
-            'Sự cố đã được lưu vào hệ thống nhưng chưa thể gửi tới Telegram do chưa có Chat ID! Nhấn vào đây để kết nối bot @hotrogiangday_bot.',
-            'warning',
+            'Lưu Sự Cố Thành Công',
+            'Sự cố đã được ghi nhận vào hệ thống. Nhấn vào đây để kết nối nhận thông báo tự động qua bot Telegram @hotrogiangday_bot.',
+            'info',
             incident?.deviceSn,
             () => setIsTelegramModalOpen(true)
           );
         } else {
           addToast(
-            'Lỗi Gửi Telegram',
-            `Không thể chuyển tin tới bot: ${resData.error || 'Lỗi kết nối Telegram'}`,
-            'error',
+            'Đã Tiếp Nhận Phiếu Sự Cố',
+            `Phiếu đã lưu thành công. (Thông báo Telegram: ${errMsg})`,
+            'info',
             incident?.deviceSn,
             () => setIsTelegramModalOpen(true)
           );
@@ -708,28 +706,6 @@ export default function App() {
     }
   };
 
-  const sendZaloAlert = async (incident: any, eventType: 'new' | 'accepted' | 'resolved', notes?: string) => {
-    try {
-      await fetch('/api/zalo/notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: '0987119665',
-          incident: {
-            ...incident,
-            eventType,
-            notes,
-            updatedBy: currentUser?.name || 'Cán Bộ Kỹ Thuật',
-            updatedAt: new Date().toISOString()
-          },
-          reporterName: incident.reporterName || currentUser?.name || 'Cán bộ'
-        })
-      });
-    } catch (err) {
-      console.warn('Error sending Zalo alert:', err);
-    }
-  };
-
   const handleResolveIncident = async (incidentId: string, resolutionNotes: string) => {
     const inc = incidents.find(i => i.id === incidentId);
     
@@ -745,8 +721,7 @@ export default function App() {
         }
       }
 
-      // Send Notifications to Hotline Zalo 0987119665
-      await sendZaloAlert(inc, 'resolved', resolutionNotes);
+      // Send Notifications exclusively to Telegram Bot @hotrogiangday_bot
       await sendTelegramAlert(inc, 'resolved', resolutionNotes);
     }
 
@@ -768,8 +743,7 @@ export default function App() {
     if (inc) {
       addToast('Đã Tiếp Nhận Sự Cố', `Sự cố của ${inc.deviceName} (${inc.deviceSn}) đã được tiếp nhận để xử lý.`, 'info', inc.deviceSn);
       
-      // Send Notifications to Hotline Zalo 0987119665
-      await sendZaloAlert(inc, 'accepted', acceptanceNotes);
+      // Send Notifications exclusively to Telegram Bot @hotrogiangday_bot
       await sendTelegramAlert(inc, 'accepted', acceptanceNotes);
     }
 

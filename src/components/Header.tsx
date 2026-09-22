@@ -17,7 +17,8 @@ import {
   ClipboardList, 
   Menu,
   Bot,
-  Phone
+  Phone,
+  Send
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -144,18 +145,18 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* Hotline Zalo Button */}
+            {/* Telegram Bot Button */}
             {currentUser && (
               <a
-                href="https://zalo.me/0987119665"
+                href="https://t.me/hotrogiangday_bot"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs font-bold text-white transition shadow-sm active:scale-95 border border-emerald-400/40"
-                title="Hotline Kỹ thuật CSVC: 0987119665 (Mở Zalo trực tiếp)"
-                id="header-zalo-btn"
+                className="flex items-center gap-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs font-bold text-white transition shadow-sm active:scale-95 border border-sky-400/40"
+                title="Kênh Telegram Kỹ thuật CSVC: @hotrogiangday_bot"
+                id="header-telegram-btn"
               >
-                <Phone className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-200 animate-pulse" />
-                <span className="hidden xs:inline font-mono">Zalo 0987119665</span>
+                <Send className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-sky-200" />
+                <span className="hidden xs:inline font-mono">@hotrogiangday_bot</span>
               </a>
             )}
 

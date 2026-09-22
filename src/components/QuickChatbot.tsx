@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, Device, IncidentReport } from '../types';
+import { AcademicMarkdown } from './AcademicMarkdown';
 
 interface ChatMessage {
   id: string;
@@ -84,7 +85,7 @@ export const QuickChatbot: React.FC<QuickChatbotProps> = ({
         {
           id: 'welcome-1',
           sender: 'bot',
-          text: `👋 Xin chào **${currentUser.name}**! Tôi là **Trợ lý Ảo CSVC DUE**.\n\nTôi sẵn sàng hỗ trợ bạn:\n• **Báo hỏng nhanh**: Gõ phòng và sự cố (ví dụ: *"Phòng D305 hỏng máy chiếu"*)\n• **Hướng dẫn xử lý**: Khắc phục lỗi cáp HDMI, âm thanh mic, remote điều hoà...\n• **Gửi tin trực tiếp đến Hotline Zalo**: Khi bạn xác nhận, sự cố sẽ chuyển ngay đến Kỹ thuật viên qua Hotline Zalo **0987119665**!`,
+          text: `👋 Xin chào **${currentUser.name}**! Tôi là **Trợ lý Ảo CSVC DUE**.\n\nTôi sẵn sàng hỗ trợ bạn:\n• **Báo hỏng nhanh**: Gõ phòng và sự cố (ví dụ: *"Phòng D305 hỏng máy chiếu"*)\n• **Hướng dẫn xử lý**: Khắc phục lỗi cáp HDMI, âm thanh mic, remote điều hoà...\n• **Phát thông báo qua Bot Telegram**: Khi bạn xác nhận, sự cố sẽ chuyển ngay đến Kỹ thuật viên qua Bot Telegram **@hotrogiangday_bot**!`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -152,7 +153,7 @@ export const QuickChatbot: React.FC<QuickChatbotProps> = ({
       const targetDevice = detectedDevice || 'Thiết bị giảng đường';
       const severityLevel: 'urgent' | 'high' = lower.includes('cháy') || lower.includes('nổ') || lower.includes('khẩn') ? 'urgent' : 'high';
       return {
-        reply: `Tôi đã nhận diện sự cố của bạn tại **${targetRoom}** đối với thiết bị **${targetDevice}**.\n\nBạn hãy kiểm tra thông tin đề xuất bên dưới và nhấn nút gửi xác nhận để lưu phiếu và gửi tin trực tiếp đến **Hotline Zalo (0987119665)** nhé!`,
+        reply: `Tôi đã nhận diện sự cố của bạn tại **${targetRoom}** đối với thiết bị **${targetDevice}**.\n\nBạn hãy kiểm tra thông tin đề xuất bên dưới và nhấn nút xác nhận để lưu phiếu và phát tin tức thì tới **Telegram Bot (@hotrogiangday_bot)** nhé!`,
         incidentDraft: {
           room: targetRoom,
           deviceName: targetDevice,
@@ -164,24 +165,24 @@ export const QuickChatbot: React.FC<QuickChatbotProps> = ({
 
     if (lower.includes('hdmi') || lower.includes('không nhận cáp') || lower.includes('không lên hình') || lower.includes('máy chiếu')) {
       return {
-        reply: `💡 **Hướng dẫn khắc phục nhanh Máy chiếu & Cáp HDMI:**\n\n1. **Kiểm tra nguồn**: Đảm bảo máy chiếu đã bật đèn xanh (Power LED).\n2. **Chọn Input**: Dùng remote hoặc nút bấm trên máy chiếu chọn đúng **HDMI 1** hoặc **HDMI 2**.\n3. **Phím tắt xuất hình**: Trên laptop nhấn tổ hợp phím **Windows + P** và chọn chế độ **Duplicate** (Nhân bản màn hình).\n4. **Cắm chặt 2 đầu cáp**: Rút cáp HDMI ra và cắm lại thật chặt ở cả cổng laptop và ổ cắm bàn giáo viên.\n\n*Nếu máy chiếu vẫn không hoạt động, bạn hãy gõ ví dụ: "Phòng D305 hỏng máy chiếu" để gửi tin tới Hotline Zalo 0987119665 ngay!*`
+        reply: `💡 **Hướng dẫn khắc phục nhanh Máy chiếu & Cáp HDMI:**\n\n1. **Kiểm tra nguồn**: Đảm bảo máy chiếu đã bật đèn xanh (Power LED).\n2. **Chọn Input**: Dùng remote hoặc nút bấm trên máy chiếu chọn đúng **HDMI 1** hoặc **HDMI 2**.\n3. **Phím tắt xuất hình**: Trên laptop nhấn tổ hợp phím **Windows + P** và chọn chế độ **Duplicate** (Nhân bản màn hình).\n4. **Cắm chặt 2 đầu cáp**: Rút cáp HDMI ra và cắm lại thật chặt ở cả cổng laptop và ổ cắm bàn giáo viên.\n\n*Nếu máy chiếu vẫn không hoạt động, bạn hãy gõ ví dụ: "Phòng D305 hỏng máy chiếu" để gửi thông báo tới Telegram Bot @hotrogiangday_bot ngay!*`
       };
     }
 
     if (lower.includes('micro') || lower.includes('mic') || lower.includes('âm thanh')) {
       return {
-        reply: `🎤 **Hướng dẫn kiểm tra Micro / Âm thanh:**\n\n1. **Kiểm tra pin**: Bật công tắc micro, nếu đèn báo đỏ mờ hoặc không sáng, mic đã hết pin (liên hệ phòng bảo vệ hoặc phòng trực nhận pin mới).\n2. **Tần số thu phát**: Đảm bảo micro và bộ thu đặt cùng kênh tần số.\n3. **Volume Amply**: Kiểm tra núm vặn Master Volume trên bàn điều khiển amply của bục giảng.\n\n*Nếu cần kỹ thuật viên mang mic dự phòng tới ngay, bạn hãy bấm gửi báo hỏng tới Hotline Zalo 0987119665 nhé!*`
+        reply: `🎤 **Hướng dẫn kiểm tra Micro / Âm thanh:**\n\n1. **Kiểm tra pin**: Bật công tắc micro, nếu đèn báo đỏ mờ hoặc không sáng, mic đã hết pin (liên hệ phòng bảo vệ hoặc phòng trực nhận pin mới).\n2. **Tần số thu phát**: Đảm bảo micro và bộ thu đặt cùng kênh tần số.\n3. **Volume Amply**: Kiểm tra núm vặn Master Volume trên bàn điều khiển amply của bục giảng.\n\n*Nếu cần kỹ thuật viên mang mic dự phòng tới ngay, bạn hãy bấm gửi báo hỏng tới Telegram Bot @hotrogiangday_bot nhé!*`
       };
     }
 
     if (lower.includes('điều hoà') || lower.includes('máy lạnh')) {
       return {
-        reply: `❄️ **Hướng dẫn sử dụng Điều hoà:**\n\n1. Đảm bảo aptomat (cầu dao) điều hoà trên tường phòng học đã bật ON.\n2. Dùng remote điều khiển hướng thẳng vào mắt nhận của dàn lạnh, bấm nút Power và chọn chế độ **Cool** (hình bông tuyết), cài đặt 24 - 26°C.\n3. Đóng kín các cửa sổ và cửa ra vào phòng học.\n\n*Nếu điều hoà chảy nước hoặc không mát, bạn hãy báo sự cố để chuyển tới Hotline Zalo 0987119665.*`
+        reply: `❄️ **Hướng dẫn sử dụng Điều hoà:**\n\n1. Đảm bảo aptomat (cầu dao) điều hoà trên tường phòng học đã bật ON.\n2. Dùng remote điều khiển hướng thẳng vào mắt nhận của dàn lạnh, bấm nút Power và chọn chế độ **Cool** (hình bông tuyết), cài đặt 24 - 26°C.\n3. Đóng kín các cửa sổ và cửa ra vào phòng học.\n\n*Nếu điều hoà chảy nước hoặc không mát, bạn hãy báo sự cố để chuyển tới Telegram Bot @hotrogiangday_bot.*`
       };
     }
 
     return {
-      reply: `Xin chào **${currentUser?.name || 'Thầy/Cô'}**! Tôi là **Trợ lý AI CSVC DUE**.\n\nTôi có thể hỗ trợ bạn:\n• **Báo hỏng siêu tốc**: Nhập số phòng và thiết bị (ví dụ: *"Phòng D305 hỏng máy chiếu"*)\n• **Khắc phục lỗi giảng đường**: Tư vấn kết nối HDMI, micro âm thanh, remote điều hoà...\n• **Gửi tin trực tiếp Hotline Zalo 0987119665**: Kết nối trực tiếp Kỹ thuật viên trực ban 24/7!\n\nBạn đang cần hỗ trợ vấn đề gì tại phòng học ạ?`
+      reply: `Xin chào **${currentUser?.name || 'Thầy/Cô'}**! Tôi là **Trợ lý AI CSVC DUE**.\n\nTôi có thể hỗ trợ bạn:\n• **Báo hỏng siêu tốc**: Nhập số phòng và thiết bị (ví dụ: *"Phòng D305 hỏng máy chiếu"*)\n• **Khắc phục lỗi giảng đường**: Tư vấn kết nối HDMI, micro âm thanh, remote điều hoà...\n• **Phát thông báo Telegram Bot @hotrogiangday_bot**: Kết nối trực tiếp Kỹ thuật viên trực ban 24/7!\n\nBạn đang cần hỗ trợ vấn đề gì tại phòng học ạ?`
     };
   };
 
@@ -295,27 +296,6 @@ export const QuickChatbot: React.FC<QuickChatbotProps> = ({
         description: `[Báo nhanh qua Chatbot]: ${draft.description}`
       });
 
-      // Dispatch to Zalo Hotline
-      try {
-        await fetch('/api/zalo/notify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone: '0987119665',
-            incident: {
-              id: deviceSn,
-              room: draft.room,
-              deviceName: draft.deviceName,
-              description: draft.description,
-              reporterName: currentUser?.name || 'Cán bộ'
-            },
-            reporterName: currentUser?.name || 'Cán bộ'
-          })
-        });
-      } catch (notifyErr) {
-        console.warn('Could not call /api/zalo/notify:', notifyErr);
-      }
-
       // Mark this message as submitted
       setMessages(prev => prev.map(m => m.id === msgId ? { ...m, incidentSubmitted: true } : m));
 
@@ -325,7 +305,7 @@ export const QuickChatbot: React.FC<QuickChatbotProps> = ({
         {
           id: `bot-confirm-${Date.now()}`,
           sender: 'bot',
-          text: `🎉 **Đã gửi báo cáo sự cố thành công!**\n• Phòng: **${draft.room}**\n• Thiết bị: **${draft.deviceName}**\n• Trạng thái: **Đã lưu hệ thống & gửi tin trực tiếp đến Hotline Zalo (0987119665)**.\n\nKỹ thuật viên phòng Cơ sở vật chất sẽ kiểm tra và khắc phục sớm nhất!`,
+          text: `🎉 **Đã phát tin thông báo sự cố thành công!**\n• Phòng: **${draft.room}**\n• Thiết bị: **${draft.deviceName}**\n• Trạng thái: **Đã lưu hệ thống & phát cảnh báo tới Telegram Bot (@hotrogiangday_bot)**.\n\nKỹ thuật viên phòng Cơ sở vật chất sẽ tiếp nhận và kiểm tra xử lý ngay!`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -465,20 +445,20 @@ export const QuickChatbot: React.FC<QuickChatbotProps> = ({
                       Online
                     </span>
                   </div>
-                  <p className="text-[10px] text-emerald-200 font-medium">Hỗ trợ CSVC & Gửi tin trực tiếp Zalo Hotline</p>
+                  <p className="text-[10px] text-sky-200 font-medium">Hỗ trợ CSVC & Tiếp nhận qua Telegram Bot</p>
                 </div>
               </div>
 
               <div className="flex items-center gap-1">
                 <a
-                  href="https://zalo.me/0987119665"
+                  href="https://t.me/hotrogiangday_bot"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="rounded-lg px-2 py-1 bg-emerald-600/90 hover:bg-emerald-500 text-white transition flex items-center gap-1 text-[11px] font-medium shadow-xs"
-                  title="Nhắn tin Zalo trực tiếp tới Hotline 0987119665"
+                  className="rounded-lg px-2 py-1 bg-sky-600/90 hover:bg-sky-500 text-white transition flex items-center gap-1 text-[11px] font-medium shadow-xs"
+                  title="Mở kênh Telegram Bot @hotrogiangday_bot"
                 >
-                  <Phone className="h-3 w-3 text-emerald-100" />
-                  <span className="text-[10px]">Hotline Zalo: 0987119665</span>
+                  <Send className="h-3 w-3 text-sky-100" />
+                  <span className="text-[10px]">Telegram: @hotrogiangday_bot</span>
                 </a>
                 <button
                   onClick={handleClearHistory}
@@ -546,22 +526,13 @@ export const QuickChatbot: React.FC<QuickChatbotProps> = ({
                             : 'bg-white text-slate-800 border border-slate-200/90 rounded-tl-none'
                         }`}
                       >
-                        <div className="whitespace-pre-line break-words space-y-1">
-                          {msg.text.split('\n').map((paragraph, pIdx) => {
-                            if (!paragraph.trim()) return <div key={pIdx} className="h-1.5" />;
-                            // Simple parser for bold **text**
-                            const parts = paragraph.split(/(\*\*.*?\*\*)/g);
-                            return (
-                              <p key={pIdx}>
-                                {parts.map((part, pPartIdx) => {
-                                  if (part.startsWith('**') && part.endsWith('**')) {
-                                    return <strong key={pPartIdx} className="font-bold">{part.slice(2, -2)}</strong>;
-                                  }
-                                  return part;
-                                })}
-                              </p>
-                            );
-                          })}
+                        <AcademicMarkdown content={msg.text} isUser={isUser} />
+                        <div
+                          className={`text-[9px] mt-1.5 text-right font-mono ${
+                            isUser ? 'text-blue-100' : 'text-slate-400'
+                          }`}
+                        >
+                          {msg.timestamp}
                         </div>
 
                         {/* Interactive Incident Card if Detected */}
@@ -584,9 +555,9 @@ export const QuickChatbot: React.FC<QuickChatbotProps> = ({
                             </div>
 
                             {msg.incidentSubmitted ? (
-                              <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-100 p-2 rounded-lg">
-                                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-                                Đã gửi báo cáo & thông báo Hotline Zalo 0987119665!
+                              <div className="flex items-center gap-1.5 text-[11px] font-bold text-sky-700 bg-sky-100 p-2 rounded-lg">
+                                <CheckCircle2 className="h-4 w-4 text-sky-600 shrink-0" />
+                                Đã gửi báo cáo & phát thông báo tới Telegram Bot @hotrogiangday_bot!
                               </div>
                             ) : (
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
@@ -600,13 +571,13 @@ export const QuickChatbot: React.FC<QuickChatbotProps> = ({
                                   Gửi Báo Hỏng Ngay
                                 </button>
                                 <a
-                                  href="https://zalo.me/0987119665"
+                                  href="https://t.me/hotrogiangday_bot"
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="w-full rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-98 text-white py-2 px-2 text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm"
+                                  className="w-full rounded-lg bg-sky-600 hover:bg-sky-700 active:scale-98 text-white py-2 px-2 text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm"
                                 >
-                                  <Phone className="h-3.5 w-3.5" />
-                                  Mở Zalo: 0987119665
+                                  <Send className="h-3.5 w-3.5" />
+                                  Mở Telegram Bot
                                 </a>
                               </div>
                             )}

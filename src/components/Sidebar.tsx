@@ -49,7 +49,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'maintenance' as const,
-      label: currentUser.role === 'staff' ? 'Chatbot CSVC & Báo Hỏng Zalo' : 'Kiểm Tra & Thay Vật Tư',
+      label: currentUser.role === 'staff' ? 'Chatbot CSVC & Báo Hỏng Telegram' : 'Kiểm Tra & Thay Vật Tư',
       icon: currentUser.role === 'staff' ? Bot : Wrench,
       roles: ['admin', 'technician', 'staff'] as UserRole[]
     },

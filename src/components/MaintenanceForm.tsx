@@ -2540,7 +2540,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const headers = ['Mã thiết bị / SN', 'Tên thiết bị', 'Phòng', 'Khoa', 'Mức độ', 'Trạng thái', 'Mô tả sự cố', 'Người báo', 'Ngày báo', 'Zalo Hotline', 'Người tiếp nhận', 'Ngày tiếp nhận', 'Người xử lý', 'Ngày xử lý', 'Kết quả xử lý'];
+                      const headers = ['Mã thiết bị / SN', 'Tên thiết bị', 'Phòng', 'Khoa', 'Mức độ', 'Trạng thái', 'Mô tả sự cố', 'Người báo', 'Ngày báo', 'Kênh tiếp nhận', 'Người tiếp nhận', 'Ngày tiếp nhận', 'Người xử lý', 'Ngày xử lý', 'Kết quả xử lý'];
                       const rows = incidents.map(inc => [
                         inc.deviceSn || '',
                         inc.deviceName || '',
@@ -2551,7 +2551,7 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                         (inc.description || '').replace(/"/g, '""'),
                         inc.reporterName || '',
                         new Date(inc.reportedAt).toLocaleString('vi-VN'),
-                        inc.zaloPhone || '0987119665',
+                        'Telegram Bot (@hotrogiangday_bot)',
                         inc.acceptedBy || '',
                         inc.acceptedAt ? new Date(inc.acceptedAt).toLocaleString('vi-VN') : '',
                         inc.responderName || '',
@@ -2621,8 +2621,8 @@ export const MaintenanceForm: React.FC<MaintenanceFormProps> = ({
                             <span>👤 Người báo:</span>
                             <strong className="text-slate-700">{inc.reporterName}</strong>
                           </p>
-                          <span className="text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded text-[9px] font-mono font-bold">
-                            Zalo: {inc.zaloPhone || '0987119665'}
+                          <span className="text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded text-[9px] font-mono font-bold">
+                            Telegram: @hotrogiangday_bot
                           </span>
                         </div>
                         <p className="flex items-center gap-1.5">

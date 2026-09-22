@@ -27,10 +27,18 @@ import {
   ArrowRight,
   ShieldCheck,
   SendHorizontal,
-  Info
+  Info,
+  GraduationCap,
+  Tv,
+  Mic2,
+  Wind,
+  Zap,
+  HelpCircle,
+  Laptop
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, Device, IncidentReport, IncidentSeverity, IncidentStatus } from '../types';
+import { AcademicMarkdown } from './AcademicMarkdown';
 
 interface StaffChatbotPortalProps {
   currentUser: User;
@@ -58,15 +66,16 @@ interface ChatMessage {
   incidentSubmitted?: boolean;
 }
 
-const ZALO_PHONE = '0987119665';
-const ZALO_LINK = `https://zalo.me/${ZALO_PHONE}`;
+const TELEGRAM_BOT_USERNAME = 'hotrogiangday_bot';
+const TELEGRAM_BOT_LINK = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
 
 const QUICK_PROMPTS = [
-  { label: '🚨 Máy chiếu phòng học không lên', prompt: 'Báo hỏng máy chiếu phòng học bật không lên hình' },
-  { label: '🔌 Cáp HDMI không nhận tín hiệu', prompt: 'Dây cáp HDMI bàn giáo viên cắm laptop không nhận hình ảnh' },
-  { label: '🎤 Micro giảng đường mất tiếng', prompt: 'Micro phòng học bị mất tiếng và chập chờn rè' },
-  { label: '❄️ Điều hoà không mát', prompt: 'Điều hoà phòng học chạy nhưng không có hơi lạnh' },
-  { label: '⚡ Mất điện ổ cắm bục giảng', prompt: 'Ổ cắm điện bục giảng viên bị mất điện' }
+  { icon: '📽️', label: 'Máy chiếu Laser & Màn điện', prompt: 'Báo hỏng máy chiếu phòng học không lên nguồn, đèn LED báo lỗi' },
+  { icon: '🔌', label: 'Cáp HDMI & Kết nối Laptop', prompt: 'Dây cáp HDMI bàn giáo viên cắm laptop không nhận tín hiệu hình ảnh' },
+  { icon: '🎤', label: 'Micro Giảng đường UHF', prompt: 'Micro không dây giảng đường bị mất tiếng, chập chờn rè' },
+  { icon: '❄️', label: 'Điều hòa & Thông gió', prompt: 'Điều hòa phòng học chạy nhưng không có hơi lạnh' },
+  { icon: '⚡', label: 'Ổ cắm Bục giảng & Điện', prompt: 'Ổ cắm điện bục giảng viên bị mất điện, không cấp nguồn được cho laptop' },
+  { icon: '🏢', label: 'Bục giảng thông minh & Lab', prompt: 'Màn hình tương tác bục giảng thông minh phòng học không nhận cảm ứng' }
 ];
 
 export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
@@ -86,7 +95,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
   const [loading, setLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [copiedZaloMsg, setCopiedZaloMsg] = useState(false);
+  const [copiedTelegramMsg, setCopiedTelegramMsg] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -106,7 +115,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
         {
           id: 'welcome-staff',
           sender: 'bot',
-          text: `👋 Xin chào **${currentUser.name}** (${currentUser.department || 'Cán bộ Khoa/Giảng đường'})!\n\nTôi là **Trợ lý Ảo CSVC DUE**, sẵn sàng hỗ trợ Quý Thầy/Cô:\n• **Báo hỏng tức thì**: Gõ sự cố hoặc phòng học (ví dụ: *"Phòng D305 máy chiếu không lên"*).\n• **Gửi tin trực tiếp đến Hotline Zalo 0987119665**: Sự cố sẽ lập tức chuyển đến số điện thoại Zalo của Kỹ thuật viên trực ban **0987119665** tiếp nhận xử lý.\n• **Theo dõi lịch sử tiếp nhận & phản hồi**: Quý Thầy/Cô có thể theo dõi tiến độ xử lý và trích xuất báo cáo tại tab bên cạnh bất cứ lúc nào!`,
+          text: `👋 Xin chào **${currentUser.name}** (${currentUser.department || 'Cán bộ Khoa/Giảng đường'})!\n\nTôi là **Trợ lý Ảo CSVC DUE**, sẵn sàng hỗ trợ Quý Thầy/Cô:\n• **Báo hỏng tức thì**: Gõ sự cố hoặc phòng học (ví dụ: *"Phòng D305 máy chiếu không lên"*).\n• **Phát thông báo qua Bot Telegram @hotrogiangday_bot**: Sự cố sẽ lập tức gửi đến Kỹ thuật viên trực ban tiếp nhận xử lý.\n• **Theo dõi lịch sử tiếp nhận & phản hồi**: Quý Thầy/Cô có thể theo dõi tiến độ xử lý và trích xuất báo cáo tại tab bên cạnh bất cứ lúc nào!`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -120,8 +129,8 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
     }
   }, [messages, loading, activeSubView]);
 
-  // Helper to format Zalo report text
-  const formatZaloReportMessage = (draft: {
+  // Helper to format Telegram report text
+  const formatTelegramReportMessage = (draft: {
     room: string;
     deviceName: string;
     description: string;
@@ -137,7 +146,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
 - Nội dung sự cố: ${draft.description}
 - Cán bộ báo: ${currentUser.name} (${currentUser.email})
 - Thời gian báo: ${timeStr}
--> Kính gửi Bộ phận Kỹ thuật CSVC (Hotline Zalo ${ZALO_PHONE}) tiếp nhận xử lý giúp!`;
+-> Kính gửi Kỹ thuật viên CSVC qua Telegram Bot @${TELEGRAM_BOT_USERNAME} tiếp nhận xử lý!`;
   };
 
   // Chat message submission
@@ -207,7 +216,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
           {
             id: `bot-fallback-${Date.now()}`,
             sender: 'bot',
-            text: `Tôi đã ghi nhận sự cố tại **${detectedRoom || 'Phòng học'}** đối với **${detectedDevice}**.\n\nQuý Thầy/Cô hãy kiểm tra thông tin dưới đây và nhấn nút gửi để lưu phiếu và gửi tin trực tiếp đến **Hotline Zalo Kỹ thuật (${ZALO_PHONE})** nhé!`,
+            text: `Tôi đã ghi nhận sự cố tại **${detectedRoom || 'Phòng học'}** đối với **${detectedDevice}**.\n\nQuý Thầy/Cô hãy kiểm tra thông tin dưới đây và nhấn nút gửi để lưu phiếu và phát thông báo qua **Bot Telegram (@${TELEGRAM_BOT_USERNAME})** nhé!`,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             incidentDraft: {
               room: detectedRoom || 'Phòng học',
@@ -223,7 +232,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
           {
             id: `bot-fallback-info-${Date.now()}`,
             sender: 'bot',
-            text: `Tôi đã nhận tin nhắn của Quý Thầy/Cô. Nếu cần báo hỏng gấp thiết bị giảng đường, Thầy/Cô có thể gõ rõ tên phòng và thiết bị (Ví dụ: *"Phòng D305 hỏng máy chiếu"*) hoặc bấm liên hệ trực tiếp tới Hotline Zalo hỗ trợ kỹ thuật **${ZALO_PHONE}**!`,
+            text: `Tôi đã nhận tin nhắn của Quý Thầy/Cô. Nếu cần báo hỏng gấp thiết bị giảng đường, Thầy/Cô có thể gõ rõ tên phòng và thiết bị (Ví dụ: *"Phòng D305 hỏng máy chiếu"*) hoặc liên hệ Kỹ thuật viên qua Bot Telegram **@${TELEGRAM_BOT_USERNAME}**!`,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           }
         ]);
@@ -256,30 +265,9 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
         room: draft.room,
         severity: draft.severity || 'high',
         description: `[Báo qua Chatbot Cán bộ]: ${draft.description}`,
-        zaloPhone: ZALO_PHONE,
-        zaloSent: true
+        telegramBot: `@${TELEGRAM_BOT_USERNAME}`,
+        telegramSent: true
       });
-
-      // Dispatch directly to Zalo Hotline endpoint
-      try {
-        await fetch('/api/zalo/notify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone: ZALO_PHONE,
-            incident: {
-              id: deviceSn,
-              room: draft.room,
-              deviceName: draft.deviceName,
-              description: draft.description,
-              reporterName: currentUser.name
-            },
-            reporterName: currentUser.name
-          })
-        });
-      } catch (notifyErr) {
-        console.warn('Could not post to /api/zalo/notify:', notifyErr);
-      }
 
       // Mark message as submitted
       setMessages(prev => prev.map(m => m.id === msgId ? { ...m, incidentSubmitted: true } : m));
@@ -290,7 +278,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
         {
           id: `bot-confirm-${Date.now()}`,
           sender: 'bot',
-          text: `🎉 **Đã gửi báo hỏng thành công!**\n• Phòng: **${draft.room}**\n• Thiết bị: **${draft.deviceName}**\n• Kênh tiếp nhận: **Đã lưu phiếu & gửi tin trực tiếp đến Hotline Zalo (${ZALO_PHONE})**.\n\nKỹ thuật viên CSVC sẽ tiếp nhận và phản hồi tới Quý Thầy/Cô sớm nhất. Thầy/Cô có thể bấm tab **"Lịch Sử Tiếp Nhận & Phản Hồi"** để theo dõi và xuất báo cáo!`,
+          text: `🎉 **Đã gửi báo hỏng thành công!**\n• Phòng: **${draft.room}**\n• Thiết bị: **${draft.deviceName}**\n• Kênh tiếp nhận: **Đã lưu phiếu & phát thông báo tới Bot Telegram (@${TELEGRAM_BOT_USERNAME})**.\n\nKỹ thuật viên CSVC sẽ tiếp nhận và phản hồi tới Quý Thầy/Cô sớm nhất. Thầy/Cô có thể bấm tab **"Lịch Sử Tiếp Nhận & Phản Hồi"** để theo dõi và xuất báo cáo!`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
@@ -298,7 +286,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
       if (onAddToast) {
         onAddToast(
           'Đã gửi báo hỏng CSVC',
-          `Sự cố tại ${draft.room} đã được gửi trực tiếp đến Hotline Zalo ${ZALO_PHONE}`,
+          `Sự cố tại ${draft.room} đã được phát thông báo tới Telegram Bot @${TELEGRAM_BOT_USERNAME}`,
           'success',
           deviceSn
         );
@@ -310,14 +298,14 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
     }
   };
 
-  // Copy Zalo formatted text
-  const handleCopyZaloText = (draft: any) => {
-    const text = formatZaloReportMessage(draft);
+  // Copy Telegram formatted text
+  const handleCopyTelegramText = (draft: any) => {
+    const text = formatTelegramReportMessage(draft);
     navigator.clipboard.writeText(text).then(() => {
-      setCopiedZaloMsg(true);
-      setTimeout(() => setCopiedZaloMsg(false), 2500);
+      setCopiedTelegramMsg(true);
+      setTimeout(() => setCopiedTelegramMsg(false), 2500);
       if (onAddToast) {
-        onAddToast('Đã sao chép tin nhắn Zalo', 'Bạn có thể dán (Paste) vào Zalo số 0987119665 ngay!', 'info');
+        onAddToast('Đã sao chép tin nhắn', `Nội dung đã được sao chép để gửi qua Telegram @${TELEGRAM_BOT_USERNAME}!`, 'info');
       }
     });
   };
@@ -466,7 +454,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
         `"${inc.deviceSn || ''}"`,
         `"${severityText}"`,
         `"${(inc.description || '').replace(/"/g, '""')}"`,
-        `"Hotline Zalo ${ZALO_PHONE}"`,
+        `"Telegram Bot @${TELEGRAM_BOT_USERNAME}"`,
         `"${statusText}"`,
         `"${inc.acceptedBy || ''}"`,
         `"${acceptedTime}"`,
@@ -520,32 +508,33 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
             Trợ Lý AI CSVC & Quản Lý Sự Cố Giảng Đường
           </h2>
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-            Hỗ trợ cán bộ khoa báo hỏng nhanh qua chatbot, tự động gửi tin trực tiếp đến Hotline Zalo <strong className="text-emerald-300">0987119665</strong>, theo dõi tiến trình tiếp nhận và trích xuất báo cáo.
+            Hỗ trợ cán bộ khoa báo hỏng nhanh qua chatbot, tự động phát thông báo tới Bot Telegram <strong className="text-sky-300">@hotrogiangday_bot</strong>, theo dõi tiến trình tiếp nhận và trích xuất báo cáo.
           </p>
         </div>
 
-        {/* Action Button Group: Hotline Zalo */}
+        {/* Action Button Group: Telegram Bot */}
         <div className="flex flex-wrap items-center gap-2.5 shrink-0 w-full md:w-auto">
           <a
-            href={ZALO_LINK}
+            href={TELEGRAM_BOT_LINK}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-4 py-2.5 text-xs font-bold shadow-lg shadow-emerald-900/30 transition transform active:scale-95 border border-white/20"
-            title="Nhấn để mở cuộc trò chuyện Zalo với Kỹ thuật viên CSVC 0987119665"
+            className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white px-4 py-2.5 text-xs font-bold shadow-lg shadow-sky-900/30 transition transform active:scale-95 border border-white/20"
+            title="Nhấn để mở kênh Bot Telegram CSVC @hotrogiangday_bot"
           >
-            <Phone className="h-4 w-4 text-emerald-100 animate-pulse" />
-            <span>Hotline Zalo: {ZALO_PHONE}</span>
+            <Send className="h-4 w-4 text-sky-100" />
+            <span>Telegram Bot: @{TELEGRAM_BOT_USERNAME}</span>
             <ExternalLink className="h-3.5 w-3.5 opacity-80" />
           </a>
 
-          <a
-            href={`tel:${ZALO_PHONE}`}
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-emerald-300 px-3 py-2.5 text-xs font-semibold border border-slate-700 transition"
-            title={`Gọi điện trực tiếp tới số ${ZALO_PHONE}`}
+          <button
+            type="button"
+            onClick={onOpenTelegramModal}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-sky-300 px-3 py-2.5 text-xs font-semibold border border-slate-700 transition"
+            title="Cấu hình Token & Chat ID Telegram"
           >
-            <Phone className="h-3.5 w-3.5 text-emerald-400" />
-            <span>Gọi Trực Tiếp</span>
-          </a>
+            <Send className="h-3.5 w-3.5 text-sky-400" />
+            <span>Cấu Hình Bot</span>
+          </button>
         </div>
       </div>
 
@@ -633,8 +622,8 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
                       Sẵn sàng 24/7
                     </span>
                   </h3>
-                  <p className="text-[11px] text-emerald-200 font-medium">
-                    Hotline Kỹ thuật CSVC Zalo: {ZALO_PHONE} (Trực ban giảng đường)
+                  <p className="text-[11px] text-sky-200 font-medium">
+                    Kênh tiếp nhận CSVC: Bot Telegram @{TELEGRAM_BOT_USERNAME}
                   </p>
                 </div>
               </div>
@@ -683,9 +672,9 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
                           : 'bg-white text-slate-800 border border-slate-200 rounded-bl-none'
                       }`}
                     >
-                      <div className="whitespace-pre-wrap">{msg.text}</div>
+                      <AcademicMarkdown content={msg.text} isUser={msg.sender === 'user'} />
                       <div
-                        className={`text-[10px] mt-1.5 text-right ${
+                        className={`text-[10px] mt-2 text-right font-mono ${
                           msg.sender === 'user' ? 'text-blue-100' : 'text-slate-400'
                         }`}
                       >
@@ -725,9 +714,9 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
                           </div>
                           <div className="col-span-2 pt-1 border-t border-dashed border-amber-200 flex items-center justify-between text-[10px]">
                             <span className="text-slate-500 font-medium">Kênh gửi tin:</span>
-                            <span className="font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded border border-emerald-300 flex items-center gap-1">
-                              <Phone className="h-3 w-3 text-emerald-600" />
-                              Zalo Hotline {ZALO_PHONE} (Trực tiếp)
+                            <span className="font-bold text-sky-800 bg-sky-100/80 px-2 py-0.5 rounded border border-sky-300 flex items-center gap-1">
+                              <Send className="h-3 w-3 text-sky-600" />
+                              Telegram Bot @{TELEGRAM_BOT_USERNAME} (Tự động)
                             </span>
                           </div>
                         </div>
@@ -741,18 +730,18 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
                             className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white py-2 px-3 text-xs font-bold shadow transition active:scale-95 disabled:opacity-50"
                           >
                             <Send className="h-3.5 w-3.5" />
-                            <span>Gửi Báo Hỏng & Gửi Zalo</span>
+                            <span>Gửi Báo Hỏng Ngay</span>
                           </button>
 
                           <a
-                            href={ZALO_LINK}
+                            href={TELEGRAM_BOT_LINK}
                             target="_blank"
                             rel="noopener noreferrer"
-                            onClick={() => handleCopyZaloText(msg.incidentDraft)}
-                            className="flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white py-2 px-3 text-xs font-bold shadow transition active:scale-95"
+                            onClick={() => handleCopyTelegramText(msg.incidentDraft)}
+                            className="flex items-center justify-center gap-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white py-2 px-3 text-xs font-bold shadow transition active:scale-95"
                           >
-                            <Phone className="h-3.5 w-3.5 text-blue-200" />
-                            <span>Mở Zalo: {ZALO_PHONE}</span>
+                            <Send className="h-3.5 w-3.5 text-sky-100" />
+                            <span>Mở Telegram Bot</span>
                             <ExternalLink className="h-3 w-3" />
                           </a>
                         </div>
@@ -760,11 +749,11 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
                         <div className="flex items-center justify-between pt-1 text-[10px] text-slate-500">
                           <button
                             type="button"
-                            onClick={() => handleCopyZaloText(msg.incidentDraft)}
-                            className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 underline"
+                            onClick={() => handleCopyTelegramText(msg.incidentDraft)}
+                            className="text-sky-600 hover:text-sky-800 font-medium flex items-center gap-1 underline"
                           >
                             <Copy className="h-3 w-3" />
-                            <span>{copiedZaloMsg ? 'Đã copy tin Zalo!' : 'Copy nội dung tin nhắn Zalo'}</span>
+                            <span>{copiedTelegramMsg ? 'Đã copy nội dung tin!' : 'Copy nội dung tin nhắn báo hỏng'}</span>
                           </button>
                           <span>Sau khi gửi, KTV tiếp nhận sẽ phản hồi tại đây</span>
                         </div>
@@ -809,9 +798,10 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
                     setInputText(qp.prompt);
                     handleSendMessage(qp.prompt);
                   }}
-                  className="rounded-full bg-white hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 text-slate-700 border border-slate-300/80 px-3 py-1 text-[11px] font-medium whitespace-nowrap transition shrink-0 shadow-2xs"
+                  className="rounded-full bg-white hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 text-slate-700 border border-slate-300/80 px-3 py-1.5 text-[11px] font-medium whitespace-nowrap transition shrink-0 shadow-2xs flex items-center gap-1.5 active:scale-95"
                 >
-                  {qp.label}
+                  <span>{qp.icon}</span>
+                  <span>{qp.label}</span>
                 </button>
               ))}
             </div>
@@ -858,52 +848,52 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
             </div>
           </div>
 
-          {/* Right Info Card: Zalo & Support Protocol */}
+          {/* Right Info Card: Telegram Bot & Support Protocol */}
           <div className="lg:col-span-4 space-y-4">
-            {/* Zalo Hotline Card */}
-            <div className="rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-600 to-emerald-700 text-white p-5 shadow-lg space-y-3.5 border border-emerald-400/40">
+            {/* Telegram Bot Card */}
+            <div className="rounded-2xl bg-gradient-to-br from-sky-600 via-blue-600 to-indigo-700 text-white p-5 shadow-lg space-y-3.5 border border-sky-400/40">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="h-9 w-9 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white">
-                    <Phone className="h-5 w-5" />
+                    <Send className="h-5 w-5" />
                   </div>
                   <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-100">Kênh Tiếp Nhận Khẩn</span>
-                    <h4 className="text-sm font-black text-white">Hotline Zalo Kỹ Thuật CSVC</h4>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-sky-100">Kênh Tiếp Nhận Khẩn</span>
+                    <h4 className="text-sm font-black text-white">Bot Telegram CSVC</h4>
                   </div>
                 </div>
-                <span className="text-xs font-mono font-bold bg-white text-emerald-800 px-2 py-0.5 rounded-full">
+                <span className="text-xs font-mono font-bold bg-white text-sky-800 px-2 py-0.5 rounded-full">
                   24/7
                 </span>
               </div>
 
               <div className="rounded-xl bg-white/10 p-3 backdrop-blur-sm border border-white/20 space-y-1 text-xs">
-                <p className="font-bold text-white text-lg font-mono tracking-wider">{ZALO_PHONE}</p>
-                <p className="text-emerald-100 text-[11px] leading-relaxed">
-                  Đầu số Zalo của Kỹ thuật viên trực quản trị CSVC. Mọi báo hỏng qua chatbot đều chuyển tự động tới đây!
+                <p className="font-bold text-white text-lg font-mono tracking-wider">@{TELEGRAM_BOT_USERNAME}</p>
+                <p className="text-sky-100 text-[11px] leading-relaxed">
+                  Kênh tiếp nhận chính thức qua Telegram Bot. Mọi sự cố cán bộ báo qua Chatbot sẽ được phát thông báo ngay lập tức!
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <a
-                  href={ZALO_LINK}
+                  href={TELEGRAM_BOT_LINK}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-1.5 rounded-xl bg-white text-emerald-800 hover:bg-emerald-50 py-2 text-xs font-bold shadow-sm transition active:scale-95"
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-white text-sky-800 hover:bg-sky-50 py-2 text-xs font-bold shadow-sm transition active:scale-95"
                 >
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  <span>Mở Zalo Chat</span>
+                  <Send className="h-3.5 w-3.5" />
+                  <span>Mở Telegram</span>
                 </a>
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(ZALO_PHONE);
-                    if (onAddToast) onAddToast('Đã copy số điện thoại', `Số ${ZALO_PHONE} đã được sao chép`, 'info');
+                    navigator.clipboard.writeText(`@${TELEGRAM_BOT_USERNAME}`);
+                    if (onAddToast) onAddToast('Đã copy tên Bot', `@${TELEGRAM_BOT_USERNAME} đã được sao chép`, 'info');
                   }}
-                  className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-800/40 hover:bg-emerald-800/60 text-white py-2 text-xs font-bold border border-white/20 transition active:scale-95"
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-sky-900/40 hover:bg-sky-900/60 text-white py-2 text-xs font-bold border border-white/20 transition active:scale-95"
                 >
                   <Copy className="h-3.5 w-3.5" />
-                  <span>Copy SĐT</span>
+                  <span>Copy Username</span>
                 </button>
               </div>
             </div>
@@ -948,7 +938,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
                   <Info className="h-3.5 w-3.5 text-blue-600" />
                   Quy trình tiếp nhận sự cố giảng đường:
                 </div>
-                <p>1. Cán bộ báo sự cố qua Chatbot hoặc gọi Zalo {ZALO_PHONE}.</p>
+                <p>1. Cán bộ báo sự cố qua Chatbot hoặc nhắn Bot Telegram @{TELEGRAM_BOT_USERNAME}.</p>
                 <p>2. Kỹ thuật viên tiếp nhận, trạng thái chuyển sang <strong>Đang xử lý</strong>.</p>
                 <p>3. Khi hoàn tất, KTV cập nhật nội dung phản hồi. Cán bộ có thể xem và trích xuất báo cáo lưu trữ.</p>
               </div>
@@ -1131,7 +1121,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
                             <span>📍 <strong>{inc.room}</strong> ({inc.faculty})</span>
                             <span>👤 Báo bởi: <strong>{inc.reporterName}</strong></span>
                             <span>🕒 Báo lúc: {new Date(inc.reportedAt).toLocaleString('vi-VN')}</span>
-                            <span className="text-emerald-700 font-medium">📲 Kênh: Zalo {ZALO_PHONE}</span>
+                            <span className="text-sky-700 font-medium">📲 Kênh: Telegram @{TELEGRAM_BOT_USERNAME}</span>
                           </div>
 
                           <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs text-slate-700 mt-1">
@@ -1194,8 +1184,8 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
                                 <p className="text-slate-400 text-[10px]">
                                   🕒 {new Date(inc.reportedAt).toLocaleString('vi-VN')}
                                 </p>
-                                <p className="text-emerald-700 text-[10px] font-semibold pt-1 border-t border-emerald-200/50">
-                                  Đã gửi thông báo tới Zalo Hotline {ZALO_PHONE}
+                                <p className="text-sky-700 text-[10px] font-semibold pt-1 border-t border-emerald-200/50">
+                                  Đã phát thông báo tới Telegram Bot @{TELEGRAM_BOT_USERNAME}
                                 </p>
                               </div>
 
@@ -1352,7 +1342,7 @@ export const StaffChatbotPortal: React.FC<StaffChatbotPortalProps> = ({
           <div>
             <p className="font-bold uppercase">BỘ PHẬN QUẢN TRỊ CƠ SỞ VẬT CHẤT</p>
             <p className="italic text-[10px]">(Ký và ghi rõ họ tên)</p>
-            <p className="mt-16 font-bold">Hotline Zalo: {ZALO_PHONE}</p>
+            <p className="mt-16 font-bold">Kênh Telegram: @{TELEGRAM_BOT_USERNAME}</p>
           </div>
         </div>
       </div>

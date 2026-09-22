@@ -938,9 +938,35 @@ do_khan_cap: "Chưa xác định"`;
       if (!targetToken) {
         return res.status(400).json({ error: 'Chưa cấu hình Telegram Bot Token' });
       }
+
+      // Auto-discover Chat ID from getUpdates if not specified
+      if (!targetChatId) {
+        try {
+          const upRes = await fetch(`https://api.telegram.org/bot${targetToken}/getUpdates?limit=20`);
+          const upData: any = await upRes.json();
+          if (upData.ok && upData.result && upData.result.length > 0) {
+            for (let i = upData.result.length - 1; i >= 0; i--) {
+              const u = upData.result[i];
+              const cid = u.message?.chat?.id || u.callback_query?.message?.chat?.id;
+              if (cid) {
+                targetChatId = String(cid);
+                if (dbFirestore) {
+                  try {
+                    await setDoc(doc(dbFirestore, 'system_config', 'telegram'), { telegramChatId: targetChatId }, { merge: true });
+                  } catch (e) {}
+                }
+                break;
+              }
+            }
+          }
+        } catch (scanErr) {
+          console.warn('Auto-scan getUpdates failed in /api/telegram/send:', scanErr);
+        }
+      }
+
       if (!targetChatId) {
         return res.status(400).json({ 
-          error: 'Chưa cung cấp Telegram Chat ID người nhận. Vui lòng vào Cấu hình Telegram để kết nối bot @hotrogiangday_bot!',
+          error: 'Chưa cung cấp Telegram Chat ID người nhận. Vui lòng mở bot Telegram @hotrogiangday_bot và bấm /start để kích hoạt nhận tin!',
           noChatId: true 
         });
       }
@@ -1114,7 +1140,7 @@ do_khan_cap: "Chưa xác định"`;
 
       const systemInstruction = `Bạn là Trợ lý Ảo AI Thông minh của Hệ thống Quản lý Thiết bị & Cơ sở vật chất Trường Đại học Kinh tế - Đại học Đà Nẵng (DUE).
 Nhiệm vụ của bạn là giải đáp, tư vấn, hướng dẫn xử lý sự cố thiết bị giảng đường (máy chiếu, cáp HDMI, VGA, micro, âm thanh, điều hoà, hệ thống điện, bàn ghế) bằng phong cách lịch sự, chuẩn mực môi trường đại học và đưa ra các bước xử lý súc tích, dễ thực hiện.
-Hotline Kỹ thuật CSVC DUE: 0987119665.`;
+Kênh tiếp nhận & phản hồi chính thức: Telegram Bot @hotrogiangday_bot (https://t.me/hotrogiangday_bot).`;
 
       let response;
       try {
@@ -1181,50 +1207,38 @@ Hotline Kỹ thuật CSVC DUE: 0987119665.`;
           const roomName = detectedRoom ? (detectedRoom.startsWith('PHÒNG') ? detectedRoom : `Phòng ${detectedRoom}`) : 'Chưa rõ phòng (Vui lòng chọn)';
           const devName = detectedDevice || 'Thiết bị phòng học';
           const severity = lower.includes('cháy') || lower.includes('nổ') || lower.includes('khẩn') || lower.includes('đang dạy') || lower.includes('gấp') ? 'urgent' : 'high';
-          const timeStr = new Date().toLocaleString('vi-VN');
-          const zaloMsg = `[BÁO HỎNG CSVC DUE - ĐẠI HỌC KINH TẾ]\n` +
-            `📍 Vị trí: ${roomName}\n` +
-            `📟 Thiết bị: ${devName}\n` +
-            `⚠️ Mức độ: ${severity.toUpperCase()}\n` +
-            `📝 Chi tiết sự cố: ${userMsg}\n` +
-            `👤 Người báo: ${currentUser?.name || 'Cán bộ / Giảng viên'}\n` +
-            `🕒 Thời gian: ${timeStr}\n` +
-            `📞 Kính gửi Hotline Kỹ thuật CSVC (Zalo 0987119665) tiếp nhận xử lý!`;
 
           return {
-            reply: `Tôi đã nhận diện sự cố của bạn tại **${roomName}** đối với **${devName}**.\n\nBạn hãy kiểm tra thông tin dưới đây và nhấn nút **"Gửi tin trực tiếp đến Zalo Hotline (0987119665)"** để chuyển phiếu ngay tới Kỹ thuật viên trực ban nhé!`,
+            reply: `Tôi đã nhận diện sự cố của bạn tại **${roomName}** đối với **${devName}**.\n\nBạn hãy kiểm tra thông tin dưới đây và nhấn nút **"Gửi Báo Cáo Tới Telegram Bot (@hotrogiangday_bot)"** để chuyển phiếu ngay tới Kỹ thuật viên trực ban nhé!`,
             incidentDraft: {
               room: roomName,
               deviceName: devName,
               description: userMsg,
-              severity: severity,
-              zaloFormattedMessage: zaloMsg,
-              zaloPhone: '0987119665',
-              zaloChatUrl: 'https://zalo.me/0987119665'
+              severity: severity
             }
           };
         }
 
         if (lower.includes('hdmi') || lower.includes('không nhận cáp') || lower.includes('không lên hình')) {
           return {
-            reply: `💡 **Hướng dẫn khắc phục nhanh Máy chiếu / Cáp HDMI:**\n\n1. **Kiểm tra nguồn**: Đảm bảo máy chiếu đã bật đèn xanh (Power LED).\n2. **Chọn đúng cổng Input**: Dùng remote hoặc nút bấm trên máy chiếu chọn đúng **HDMI 1** hoặc **HDMI 2** tương ứng với cổng cắm.\n3. **Phím tắt xuất màn hình**: Trên laptop nhấn tổ hợp phím **Windows + P** và chọn chế độ **Duplicate** (Nhân bản màn hình).\n4. **Cắm chặt 2 đầu cáp**: Rút cáp HDMI ra và cắm lại thật chặt ở cả cổng laptop và ổ cắm bàn giáo viên.\n\n*Nếu vẫn không lên hình, bạn hãy gõ ví dụ: "Phòng D305 hỏng máy chiếu" để tôi tạo phiếu gửi ngay Zalo Hotline 0987119665 nhé!*`
+            reply: `💡 **Hướng dẫn khắc phục nhanh Máy chiếu / Cáp HDMI:**\n\n1. **Kiểm tra nguồn**: Đảm bảo máy chiếu đã bật đèn xanh (Power LED).\n2. **Chọn đúng cổng Input**: Dùng remote hoặc nút bấm trên máy chiếu chọn đúng **HDMI 1** hoặc **HDMI 2** tương ứng với cổng cắm.\n3. **Phím tắt xuất màn hình**: Trên laptop nhấn tổ hợp phím **Windows + P** và chọn chế độ **Duplicate** (Nhân bản màn hình).\n4. **Cắm chặt 2 đầu cáp**: Rút cáp HDMI ra và cắm lại thật chặt ở cả cổng laptop và ổ cắm bàn giáo viên.\n\n*Nếu vẫn không lên hình, bạn hãy gõ ví dụ: "Phòng D305 hỏng máy chiếu" để tôi tạo phiếu phát tin tới Telegram Bot @hotrogiangday_bot nhé!*`
           };
         }
 
         if (lower.includes('micro') || lower.includes('mic') || lower.includes('âm thanh')) {
           return {
-            reply: `🎤 **Hướng dẫn kiểm tra Micro / Hệ thống Âm thanh:**\n\n1. **Kiểm tra pin**: Bật công tắc micro, nếu đèn báo đỏ mờ hoặc không sáng, mic đã hết pin (liên hệ phòng bảo vệ hoặc phòng trực nhận pin mới).\n2. **Tần số thu phát**: Đảm bảo micro và bộ thu đặt cùng kênh tần số.\n3. **Volume Amply**: Kiểm tra núm vặn Master Volume trên bàn điều khiển amply của bục giảng.\n\n*Nếu cần hỗ trợ gấp trong giờ dạy, bạn có thể bấm nút báo hỏng để gửi tin trực tiếp đến Hotline Zalo 0987119665!*`
+            reply: `🎤 **Hướng dẫn kiểm tra Micro / Hệ thống Âm thanh:**\n\n1. **Kiểm tra pin**: Bật công tắc micro, nếu đèn báo đỏ mờ hoặc không sáng, mic đã hết pin (liên hệ phòng bảo vệ hoặc phòng trực nhận pin mới).\n2. **Tần số thu phát**: Đảm bảo micro và bộ thu đặt cùng kênh tần số.\n3. **Volume Amply**: Kiểm tra núm vặn Master Volume trên bàn điều khiển amply của bục giảng.\n\n*Nếu cần hỗ trợ gấp trong giờ dạy, bạn có thể bấm nút báo hỏng để gửi tin trực tiếp đến bot Telegram @hotrogiangday_bot!*`
           };
         }
 
         if (lower.includes('điều hoà') || lower.includes('máy lạnh')) {
           return {
-            reply: `❄️ **Hướng dẫn sử dụng Điều hoà:**\n\n1. Đảm bảo aptomat (cầu dao) điều hoà trên tường phòng học đã được bật ON.\n2. Dùng remote điều khiển hướng thẳng vào mắt nhận của dàn lạnh, bấm nút Power và chọn chế độ **Cool** (hình bông tuyết), cài đặt nhiệt độ từ 24 - 26°C.\n3. Đóng kín cửa sổ và cửa ra vào phòng học để đảm bảo hiệu quả làm mát.\n\n*Nếu điều hoà phát tiếng ồn lớn, chảy nước hoặc không phả hơi lạnh, vui lòng gõ sự cố để chuyển tới Hotline Zalo 0987119665 nhé.*`
+            reply: `❄️ **Hướng dẫn sử dụng Điều hoà:**\n\n1. Đảm bảo aptomat (cầu dao) điều hoà trên tường phòng học đã được bật ON.\n2. Dùng remote điều khiển hướng thẳng vào mắt nhận của dàn lạnh, bấm nút Power và chọn chế độ **Cool** (hình bông tuyết), cài đặt nhiệt độ từ 24 - 26°C.\n3. Đóng kín cửa sổ và cửa ra vào phòng học để đảm bảo hiệu quả làm mát.\n\n*Nếu điều hoà phát tiếng ồn lớn, chảy nước hoặc không phả hơi lạnh, vui lòng gõ sự cố để chuyển tới Telegram Bot @hotrogiangday_bot nhé.*`
           };
         }
 
         return {
-          reply: `Xin chào ${currentUser?.name || 'Thầy/Cô'}! Tôi là **Trợ lý AI CSVC DUE** (Đại học Kinh tế - ĐH Đà Nẵng).\n\nTôi sẵn sàng hỗ trợ Quý Thầy/Cô:\n• **Báo hỏng giảng đường**: Gõ sự cố (ví dụ: *"Phòng D305 máy chiếu không lên nguồn"*)\n• **Khắc phục lỗi nhanh**: Hướng dẫn cắm cáp HDMI, pin micro, remote điều hoà...\n• **Gửi tin trực tiếp đến Zalo Hotline (0987119665)**: Chuyển thẳng tới Kỹ thuật viên trực ban tức thì chỉ với 1 chạm!\n\nQuý Thầy/Cô đang gặp vấn đề gì tại phòng học cần hỗ trợ ạ?`
+          reply: `Xin chào ${currentUser?.name || 'Thầy/Cô'}! Tôi là **Trợ lý AI CSVC DUE** (Đại học Kinh tế - ĐH Đà Nẵng).\n\nTôi sẵn sàng hỗ trợ Quý Thầy/Cô:\n• **Báo hỏng giảng đường**: Gõ sự cố (ví dụ: *"Phòng D305 máy chiếu không lên nguồn"*)\n• **Khắc phục lỗi nhanh**: Hướng dẫn cắm cáp HDMI, pin micro, remote điều hoà...\n• **Phát thông báo qua Telegram Bot (@hotrogiangday_bot)**: Chuyển thẳng tới Kỹ thuật viên trực ban tức thì chỉ với 1 chạm!\n\nQuý Thầy/Cô đang gặp vấn đề gì tại phòng học cần hỗ trợ ạ?`
         };
       };
 
@@ -1240,7 +1254,7 @@ Hotline Kỹ thuật CSVC DUE: 0987119665.`;
 
         const systemPrompt = `Bạn là Trợ lý Ảo AI Quản lý & Hỗ trợ Kỹ thuật Cơ sở vật chất (CSVC) của Trường Đại học Kinh tế - Đại học Đà Nẵng (DUE).
 Người đang trò chuyện với bạn là: ${currentUser?.name || 'Cán bộ / Giảng viên'} (${currentUser?.department || 'Khoa/Phòng ban'}, vai trò: ${currentUser?.role || 'staff'}).
-Hotline Kỹ thuật CSVC trực tiếp: 0987119665 (Hỗ trợ Zalo & Điện thoại trực ban).
+Kênh tiếp nhận & phản hồi chính thức: Telegram Bot @hotrogiangday_bot (https://t.me/hotrogiangday_bot).
 
 Nhiệm vụ của bạn:
 1. Trả lời thân thiện, kính trọng, lịch sự ("Kính chào Quý Thầy/Cô", "Dạ thưa Thầy/Cô..."), văn phong chuẩn mực môi trường giáo dục đại học, súc tích và giải quyết việc ngay.
@@ -1251,23 +1265,21 @@ Nhiệm vụ của bạn:
    - Điều hoà: kiểm tra aptomat trên tường bật ON, dùng remote bật chế độ Cool 24-26°C.
    - Mất điện ổ cắm, quạt, bàn ghế giảng đường.
 3. KHI NGƯỜI DÙNG CÓ Ý ĐỊNH BÁO HỎNG / BÁO SỰ CỐ (ví dụ nhắc đến phòng học, thiết bị bị lỗi, chập chờn, hoặc cần kỹ thuật viên hỗ trợ):
-   - Bạn PHẢI trích xuất thông tin để tạo incidentDraft gửi trực tiếp tới Hotline Zalo 0987119665.
+   - Bạn PHẢI trích xuất thông tin để tạo incidentDraft gửi thông báo tới Telegram Bot @hotrogiangday_bot.
    - Định dạng trả về BẮT BUỘC là JSON hợp lệ theo cấu trúc sau:
    {
-     "reply": "Lời phản hồi thân thiện, thông báo đã nhận diện sự cố và mời Thầy/Cô nhấn nút gửi trực tiếp đến Hotline Zalo 0987119665",
+     "reply": "Lời phản hồi thân thiện, thông báo đã nhận diện sự cố và mời Thầy/Cô xác nhận gửi thông báo tới Telegram Bot @hotrogiangday_bot",
      "incidentDraft": {
        "room": "Tên phòng (ví dụ: Phòng D305, Phòng H102)",
        "deviceName": "Tên thiết bị (ví dụ: Máy chiếu Panasonic, Dây cáp HDMI, Micro không dây, Điều hoà)",
        "description": "Tóm tắt ngắn gọn mô tả sự cố từ người dùng",
-       "severity": "low | medium | high | urgent",
-       "zaloFormattedMessage": "[BÁO HỎNG CSVC DUE - ĐẠI HỌC KINH TẾ]\\n📍 Vị trí: ...\\n📟 Thiết bị: ...\\n⚠️ Mức độ: KHẨN CẤP / CAO\\n📝 Nội dung: ...\\n👤 Người báo: ${currentUser?.name || 'Cán bộ'}\\n📞 Hotline Kỹ thuật CSVC (Zalo 0987119665) tiếp nhận!",
-       "zaloPhone": "0987119665"
+       "severity": "low | medium | high | urgent"
      }
    }
 4. NẾU NGƯỜI DÙNG CHỈ HỎI ĐÁP / TƯ VẤN THÔNG THƯỜNG (không báo hỏng):
    - Trả về JSON:
    {
-     "reply": "Nội dung trả lời chi tiết, định dạng Markdown đẹp, có gạch đầu dòng rõ ràng, kèm nhắc Hotline Zalo 0987119665 khi cần hỗ trợ khẩn cấp."
+     "reply": "Nội dung trả lời chi tiết, định dạng Markdown đẹp, có gạch đầu dòng rõ ràng, kèm nhắc kênh hỗ trợ Telegram Bot @hotrogiangday_bot khi cần hỗ trợ khẩn cấp."
    }
 
 QUAN TRỌNG: Chỉ trả về JSON duy nhất, không kèm markdown \`\`\`json\`\`\`.`;
@@ -1318,7 +1330,7 @@ QUAN TRỌNG: Chỉ trả về JSON duy nhất, không kèm markdown \`\`\`json\
       console.error('Error in chat assistant endpoint:', err);
       // Guarantee 200 response with smart fallback so client never gets an error
       return res.json({
-        reply: `Xin chào Quý Thầy/Cô! Tôi là **Trợ lý AI CSVC DUE** (Đại học Kinh tế - ĐH Đà Nẵng). Tôi có thể hỗ trợ kiểm tra máy chiếu, cáp HDMI, âm thanh micro hoặc tạo phiếu báo hỏng gửi trực tiếp tới Hotline Zalo Kỹ thuật viên **0987119665**. Quý Thầy/Cô vui lòng cho biết phòng học và thiết bị cần hỗ trợ nhé!`
+        reply: `Xin chào Quý Thầy/Cô! Tôi là **Trợ lý AI CSVC DUE** (Đại học Kinh tế - ĐH Đà Nẵng). Tôi có thể hỗ trợ kiểm tra máy chiếu, cáp HDMI, âm thanh micro hoặc tạo phiếu báo hỏng phát thông báo trực tiếp tới Kỹ thuật viên qua Bot Telegram **@hotrogiangday_bot**. Quý Thầy/Cô vui lòng cho biết phòng học và thiết bị cần hỗ trợ nhé!`
       });
     }
   });

@@ -92,8 +92,8 @@ export interface IncidentReport {
   acceptedAt?: string;
   acceptanceNotes?: string;
   responderName?: string;
-  zaloPhone?: string;
-  zaloSent?: boolean;
+  telegramBot?: string;
+  telegramSent?: boolean;
 }
 
 
